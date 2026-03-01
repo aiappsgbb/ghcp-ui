@@ -1,0 +1,89 @@
+import { useRef, useEffect } from "react";
+import { MessageSquare, Sparkles } from "lucide-react";
+import { MessageBubble } from "./MessageBubble";
+import type { ChatMessage } from "../types";
+
+interface ChatContainerProps {
+  messages: ChatMessage[];
+  isLoading: boolean;
+  hasSession: boolean;
+  onNewSession: () => void;
+}
+
+export function ChatContainer({
+  messages,
+  isLoading,
+  hasSession,
+  onNewSession,
+}: ChatContainerProps) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
+
+  if (!hasSession) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center max-w-md px-6">
+          <div className="w-16 h-16 rounded-2xl bg-brand-600/10 flex items-center justify-center mx-auto mb-6">
+            <Sparkles className="w-8 h-8 text-brand-400" />
+          </div>
+          <h2 className="text-2xl font-semibold mb-3">
+            Welcome to GHCP UI
+          </h2>
+          <p className="text-zinc-500 text-sm mb-6 leading-relaxed">
+            A web interface for GitHub Copilot SDK.
+            Create a new session to start chatting with Copilot,
+            powered by Azure AI Foundry.
+          </p>
+          <button
+            onClick={onNewSession}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors"
+          >
+            <MessageSquare className="w-4 h-4" />
+            Start New Chat
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-3xl mx-auto">
+        {messages.length === 0 ? (
+          <div className="flex items-center justify-center h-full py-20">
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-xl bg-zinc-900 flex items-center justify-center mx-auto mb-4">
+                <MessageSquare className="w-6 h-6 text-zinc-600" />
+              </div>
+              <p className="text-zinc-500 text-sm">
+                Send a message to begin
+              </p>
+            </div>
+          </div>
+        ) : (
+          messages.map((msg) => (
+            <MessageBubble key={msg.id} message={msg} />
+          ))
+        )}
+
+        {isLoading && (
+          <div className="flex gap-3 px-4 py-4 bg-zinc-900/50">
+            <div className="w-7 h-7 rounded-lg bg-brand-600/20 flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4 text-brand-400 animate-pulse" />
+            </div>
+            <div className="flex items-center gap-1 pt-2">
+              <span className="w-2 h-2 rounded-full bg-brand-500 animate-bounce [animation-delay:0ms]" />
+              <span className="w-2 h-2 rounded-full bg-brand-500 animate-bounce [animation-delay:150ms]" />
+              <span className="w-2 h-2 rounded-full bg-brand-500 animate-bounce [animation-delay:300ms]" />
+            </div>
+          </div>
+        )}
+
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,10 @@
+{
+  "resourceGroup": "rg-",
+  "logAnalyticsWorkspace": "log-",
+  "containerRegistry": "cr",
+  "containerAppsEnvironment": "cae-",
+  "containerApp": "ca-",
+  "cognitiveServicesAccount": "oai-",
+  "keyVault": "kv-",
+  "managedIdentity": "id-"
+}

@@ -1,0 +1,27 @@
+{
+  "name": "ghcp-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Web UI for GitHub Copilot SDK — powered by Azure AI Foundry",
+  "license": "MIT",
+  "workspaces": [
+    "src/server",
+    "src/client"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm run dev -w src/server",
+    "dev:client": "npm run dev -w src/client",
+    "build": "npm run build -w src/client && npm run build -w src/server",
+    "start": "npm run start -w src/server",
+    "lint": "npm run lint -w src/server && npm run lint -w src/client",
+    "typecheck": "npm run typecheck -w src/server && npm run typecheck -w src/client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
