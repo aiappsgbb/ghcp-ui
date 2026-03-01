@@ -13,6 +13,35 @@
   --color-brand-900: #4c1d95;
 }
 
+/* Safe area for notch devices */
+.safe-top {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+/* Prevent iOS zoom on input focus */
+@media (max-width: 768px) {
+  textarea, input, select {
+    font-size: 16px !important;
+  }
+}
+
+/* Mobile viewport height fix (100vh vs dvh) */
+html, body, #root {
+  height: 100%;
+  height: 100dvh;
+}
+
+/* Touch: show copy buttons on active/focus */
+@media (hover: none) {
+  .group:active .group-hover\:opacity-100,
+  .group\/code:active .group-hover\/code\:opacity-100 {
+    opacity: 1;
+  }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -90,4 +119,13 @@
   content: "▋";
   animation: blink 1s infinite;
   color: #8b5cf6;
+}
+
+/* Slide-in-right for panels */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.2s ease-out;
 }

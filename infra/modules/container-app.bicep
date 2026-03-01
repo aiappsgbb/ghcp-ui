@@ -9,6 +9,7 @@ param managedIdentityClientId string
 param openAiEndpoint string
 param openAiModelName string
 param keyVaultName string
+param storageAccountName string
 
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' existing = {
   name: containerRegistryName
@@ -69,6 +70,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_FOUNDRY_ENDPOINT', value: '${openAiEndpoint}openai/v1/' }
             { name: 'AZURE_FOUNDRY_MODEL', value: openAiModelName }
             { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
+            { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
             {
               name: 'AZURE_FOUNDRY_API_KEY'
               secretRef: 'azure-foundry-api-key'

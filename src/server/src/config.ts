@@ -7,6 +7,9 @@ export interface AppConfig {
     foundryEndpoint: string;
     foundryApiKey: string;
     foundryModel: string;
+    storageConnectionString: string;
+    storageAccountName: string;
+    storageContainerName: string;
   };
 
   copilot: {
@@ -33,6 +36,9 @@ export function loadConfig(): AppConfig {
       foundryEndpoint,
       foundryApiKey,
       foundryModel,
+      storageConnectionString: process.env.AZURE_STORAGE_CONNECTION_STRING ?? "",
+      storageAccountName: process.env.AZURE_STORAGE_ACCOUNT_NAME ?? "",
+      storageContainerName: process.env.AZURE_STORAGE_CONTAINER_NAME ?? "workspaces",
     },
     copilot: {
       githubToken,

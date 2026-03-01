@@ -1,14 +1,21 @@
 import { useState, useCallback } from "react";
-import { PanelLeftClose, PanelLeft } from "lucide-react";
 import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { ChatContainer } from "./components/ChatContainer";
 import { InputBar } from "./components/InputBar";
+import { SettingsDrawer, type McpServerEntry } from "./components/SettingsDrawer";
+import { NewChatDialog } from "./components/NewChatDialog";
+import { WorkspacePanel } from "./components/WorkspacePanel";
 import { useChat } from "./hooks/useChat";
 import { useSessions } from "./hooks/useSessions";
 
 export default function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [newChatOpen, setNewChatOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [mcpServers, setMcpServers] = useState<McpServerEntry[]>([]);
+
   const {
     messages,
     isLoading,
@@ -18,6 +25,8 @@ export default function App() {
     sendMessage,
     stopGeneration,
     setError,
+    loadSessionMessages,
+    setCurrentSession,
   } = useChat();
   const {
     sessions,
@@ -25,43 +34,56 @@ export default function App() {
     deleteSession: removeSession,
   } = useSessions();
 
-  const handleNewSession = useCallback(async () => {
+  const handleNewSession = useCallback(async (model?: string) => {
     try {
-      await createSession();
+      await createSession(model);
       await fetchSessions();
     } catch {
       // Error handled in hook
     }
   }, [createSession, fetchSessions]);
 
+  const handleNewChatClick = useCallback(() => {
+    setNewChatOpen(true);
+  }, []);
+
   const handleSelectSession = useCallback(
-    (_id: string) => {
-      // For now, just fetch sessions - full session switching would need message loading
-      fetchSessions();
+    async (id: string) => {
+      const session = sessions.find((s) => s.id === id);
+      if (session) {
+        setCurrentSession(session);
+        await loadSessionMessages(id);
+      }
     },
-    [fetchSessions]
+    [sessions, setCurrentSession, loadSessionMessages]
   );
 
   const handleDeleteSession = useCallback(
     async (id: string) => {
       await removeSession(id);
+      if (currentSession?.id === id) {
+        setCurrentSession(null);
+      }
     },
-    [removeSession]
+    [removeSession, currentSession, setCurrentSession]
   );
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden">
       <Header
         sessionModel={currentSession?.model ?? null}
         isConnected={currentSession !== null}
+        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenWorkspace={() => setWorkspaceOpen(true)}
       />
 
       {error && (
-        <div className="px-4 py-2 bg-red-950/50 border-b border-red-900/50 flex items-center justify-between">
-          <p className="text-sm text-red-400">{error}</p>
+        <div className="px-3 sm:px-4 py-2 bg-red-950/50 border-b border-red-900/50 flex items-center justify-between">
+          <p className="text-sm text-red-400 flex-1 min-w-0 truncate">{error}</p>
           <button
             onClick={() => setError(null)}
-            className="text-xs text-red-500 hover:text-red-400"
+            className="text-xs text-red-500 hover:text-red-400 ml-2 shrink-0 p-1"
           >
             Dismiss
           </button>
@@ -72,30 +94,19 @@ export default function App() {
         <Sidebar
           sessions={sessions}
           activeSessionId={currentSession?.id ?? null}
-          onNewSession={handleNewSession}
+          onNewSession={handleNewChatClick}
           onSelectSession={handleSelectSession}
           onDeleteSession={handleDeleteSession}
           isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
         />
 
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Sidebar toggle */}
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="absolute top-14 left-2 z-10 p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700 transition-all"
-          >
-            {sidebarOpen ? (
-              <PanelLeftClose className="w-4 h-4" />
-            ) : (
-              <PanelLeft className="w-4 h-4" />
-            )}
-          </button>
-
           <ChatContainer
             messages={messages}
             isLoading={isLoading}
             hasSession={currentSession !== null}
-            onNewSession={handleNewSession}
+            onNewSession={handleNewChatClick}
           />
 
           <InputBar
@@ -106,6 +117,28 @@ export default function App() {
           />
         </div>
       </div>
+
+      <NewChatDialog
+        isOpen={newChatOpen}
+        onClose={() => setNewChatOpen(false)}
+        onCreateSession={(model) => handleNewSession(model)}
+        defaultModel="gpt-4.1"
+      />
+
+      <SettingsDrawer
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        mcpServers={mcpServers}
+        onUpdateMcpServers={setMcpServers}
+        currentModel={currentSession?.model ?? ""}
+        workspacePath={null}
+      />
+
+      <WorkspacePanel
+        isOpen={workspaceOpen}
+        onClose={() => setWorkspaceOpen(false)}
+        sessionId={currentSession?.id ?? null}
+      />
     </div>
   );
 }

@@ -32,6 +32,18 @@ export function useChat() {
     }
   }, []);
 
+  const loadSessionMessages = useCallback(async (sessionId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/sessions/${sessionId}/messages`);
+      if (res.ok) {
+        const msgs: ChatMessage[] = await res.json();
+        setMessages(msgs);
+      }
+    } catch {
+      // Silently fail
+    }
+  }, []);
+
   const sendMessage = useCallback(
     async (prompt: string) => {
       if (!currentSession) {
@@ -135,5 +147,7 @@ export function useChat() {
     stopGeneration,
     clearMessages,
     setError,
+    loadSessionMessages,
+    setCurrentSession,
   };
 }

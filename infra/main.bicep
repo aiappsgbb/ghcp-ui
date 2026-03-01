@@ -97,6 +97,18 @@ module keyVault './modules/key-vault.bicep' = {
   }
 }
 
+// Storage Account (workspace files)
+module storageAccount './modules/storage-account.bicep' = {
+  name: 'storage-account'
+  scope: rg
+  params: {
+    name: 'st${resourceToken}'
+    location: location
+    tags: tags
+    managedIdentityPrincipalId: managedIdentity.outputs.principalId
+  }
+}
+
 // Container Apps Environment
 module containerAppsEnv './modules/container-apps-environment.bicep' = {
   name: 'container-apps-env'
@@ -125,6 +137,7 @@ module containerApp './modules/container-app.bicep' = {
     openAiEndpoint: openAi.outputs.endpoint
     openAiModelName: aiModelName
     keyVaultName: keyVault.outputs.name
+    storageAccountName: storageAccount.outputs.name
   }
 }
 
@@ -136,4 +149,5 @@ output AZURE_CONTAINER_APP_NAME string = containerApp.outputs.name
 output AZURE_CONTAINER_APP_FQDN string = containerApp.outputs.fqdn
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
 output AZURE_OPENAI_MODEL_NAME string = aiModelName
+output AZURE_STORAGE_ACCOUNT_NAME string = storageAccount.outputs.name
 output SERVICE_WEB_ENDPOINTS array = [containerApp.outputs.uri]

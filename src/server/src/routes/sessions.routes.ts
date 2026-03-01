@@ -12,10 +12,14 @@ export function createSessionRoutes(copilot: CopilotService): Router {
 
   // POST /api/sessions — create new session
   router.post("/", async (req: Request, res: Response) => {
-    const { model } = req.body as { model?: string };
+    const { model, workspacePath, mcpServers } = req.body as {
+      model?: string;
+      workspacePath?: string;
+      mcpServers?: Record<string, { type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>;
+    };
 
     try {
-      const session = await copilot.createSession(model);
+      const session = await copilot.createSession(model, workspacePath, mcpServers);
       res.status(201).json(session);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";

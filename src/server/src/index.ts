@@ -6,8 +6,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
 import { CopilotService } from "./services/copilot.service.js";
+import { WorkspaceService } from "./services/workspace.service.js";
 import { createChatRoutes } from "./routes/chat.routes.js";
 import { createSessionRoutes } from "./routes/sessions.routes.js";
+import { createWorkspaceRoutes } from "./routes/workspace.routes.js";
 import healthRoutes from "./routes/health.routes.js";
 import {
   errorHandler,
@@ -40,13 +42,17 @@ async function main() {
   // Health routes (no auth)
   app.use("/api", healthRoutes);
 
-  // Initialize Copilot SDK
+  // Initialize services
   const copilot = new CopilotService(config);
   await copilot.initialize();
+
+  const workspace = new WorkspaceService(config);
+  await workspace.initialize();
 
   // API routes
   app.use("/api/sessions", createSessionRoutes(copilot));
   app.use("/api/chat", createChatRoutes(copilot));
+  app.use("/api/workspace", createWorkspaceRoutes(workspace));
 
   // Serve static frontend in production
   if (config.isProduction) {

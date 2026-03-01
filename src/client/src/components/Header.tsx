@@ -1,14 +1,24 @@
-import { MessageSquare, Github } from "lucide-react";
+import { MessageSquare, Github, Menu, Settings, FolderOpen } from "lucide-react";
 
 interface HeaderProps {
   sessionModel: string | null;
   isConnected: boolean;
+  onToggleSidebar: () => void;
+  onOpenSettings: () => void;
+  onOpenWorkspace: () => void;
 }
 
-export function Header({ sessionModel, isConnected }: HeaderProps) {
+export function Header({ sessionModel, isConnected, onToggleSidebar, onOpenSettings, onOpenWorkspace }: HeaderProps) {
   return (
-    <header className="flex items-center justify-between px-6 py-3 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm">
-      <div className="flex items-center gap-3">
+    <header className="flex items-center justify-between px-3 sm:px-6 py-3 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm safe-top">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <button
+          onClick={onToggleSidebar}
+          className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
+          aria-label="Toggle sidebar"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
             <MessageSquare className="w-4 h-4 text-white" />
@@ -23,9 +33,9 @@ export function Header({ sessionModel, isConnected }: HeaderProps) {
         </span>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
         {sessionModel && (
-          <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-300 font-mono">
+          <span className="text-xs px-2 py-1 rounded-full bg-zinc-800 text-zinc-300 font-mono hidden sm:inline-block">
             {sessionModel}
           </span>
         )}
@@ -35,15 +45,29 @@ export function Header({ sessionModel, isConnected }: HeaderProps) {
               isConnected ? "bg-emerald-500" : "bg-zinc-600"
             }`}
           />
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-zinc-500 hidden sm:inline">
             {isConnected ? "Connected" : "Disconnected"}
           </span>
         </div>
+        <button
+          onClick={onOpenWorkspace}
+          className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
+          aria-label="Workspace files"
+        >
+          <FolderOpen className="w-5 h-5" />
+        </button>
+        <button
+          onClick={onOpenSettings}
+          className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
+          aria-label="Settings"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
         <a
           href="https://github.com"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
         >
           <Github className="w-5 h-5" />
         </a>

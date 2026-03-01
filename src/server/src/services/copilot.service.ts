@@ -1,4 +1,4 @@
-import { CopilotClient, approveAll, type CopilotSession } from "@github/copilot-sdk";
+import { CopilotClient, approveAll, type CopilotSession, type MCPServerConfig } from "@github/copilot-sdk";
 import { v4 as uuidv4 } from "uuid";
 import type { AppConfig } from "../config.js";
 
@@ -65,7 +65,7 @@ export class CopilotService {
     console.log("[CopilotService] Shut down");
   }
 
-  async createSession(model?: string): Promise<SessionInfo> {
+  async createSession(model?: string, workingDirectory?: string, mcpServers?: Record<string, { type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>): Promise<SessionInfo> {
     if (!this.client) throw new Error("CopilotService not initialized");
 
     const sessionId = uuidv4();
@@ -75,6 +75,8 @@ export class CopilotService {
       sessionId: string;
       model: string;
       onPermissionRequest: typeof approveAll;
+      workingDirectory?: string;
+      mcpServers?: Record<string, MCPServerConfig>;
       provider?: {
         type: "openai" | "azure" | "anthropic";
         baseUrl: string;
@@ -86,6 +88,22 @@ export class CopilotService {
       model: selectedModel,
       onPermissionRequest: approveAll,
     };
+
+    if (workingDirectory) {
+      sessionConfig.workingDirectory = workingDirectory;
+      // Auto-add filesystem MCP server for workspace access
+      sessionConfig.mcpServers = {
+        workspace: {
+          type: "local" as const,
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-filesystem", workingDirectory],
+          tools: ["*"],
+        },
+        ...mcpServers,
+      };
+    } else if (mcpServers && Object.keys(mcpServers).length > 0) {
+      sessionConfig.mcpServers = mcpServers;
+    }
 
     if (this.config.copilot.useByok) {
       sessionConfig.provider = {
