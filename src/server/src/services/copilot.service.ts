@@ -33,19 +33,25 @@ export class CopilotService {
   }
 
   async initialize(): Promise<void> {
-    const clientOpts: Record<string, unknown> = {};
+    try {
+      const clientOpts: Record<string, unknown> = {};
 
-    if (this.config.copilot.githubToken) {
-      clientOpts.githubToken = this.config.copilot.githubToken;
+      if (this.config.copilot.githubToken) {
+        clientOpts.githubToken = this.config.copilot.githubToken;
+      }
+
+      if (this.config.copilot.useByok) {
+        clientOpts.useLoggedInUser = false;
+      }
+
+      this.client = new CopilotClient(clientOpts);
+      await this.client.start();
+      console.log("[CopilotService] Client started successfully");
+    } catch (err) {
+      console.warn("[CopilotService] Failed to start Copilot CLI — server will run but chat will be unavailable until CLI is installed");
+      console.warn("[CopilotService]", (err as Error).message ?? err);
+      this.client = null;
     }
-
-    if (this.config.copilot.useByok) {
-      clientOpts.useLoggedInUser = false;
-    }
-
-    this.client = new CopilotClient(clientOpts);
-    await this.client.start();
-    console.log("[CopilotService] Client started successfully");
   }
 
   async shutdown(): Promise<void> {

@@ -4,25 +4,25 @@ import type { WorkspaceService } from "../services/workspace.service.js";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-const DEFAULT_USER = "default";
-
 export function createWorkspaceRoutes(workspace: WorkspaceService): Router {
   const router = Router();
 
-  // GET /api/workspace/files — list files
-  router.get("/files", async (req: Request, res: Response) => {
+  // GET /api/workspace/:userId/files — list files
+  router.get("/:userId/files", async (req: Request, res: Response) => {
+    const userId = req.params.userId as string;
     const dirPath = (req.query.path as string) ?? "";
     try {
-      const files = await workspace.listFiles(DEFAULT_USER, dirPath);
-      res.json(files);
+      const files = await workspace.listFiles(userId, dirPath);
+      res.json({ files });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       res.status(500).json({ error: { message } });
     }
   });
 
-  // POST /api/workspace/upload — upload file
-  router.post("/upload", upload.single("file"), async (req: Request, res: Response) => {
+  // POST /api/workspace/:userId/files — upload file (multipart)
+  router.post("/:userId/files", upload.single("file"), async (req: Request, res: Response) => {
+    const userId = req.params.userId as string;
     const file = req.file;
     const targetPath = (req.body.path as string) ?? file?.originalname;
 
@@ -32,7 +32,7 @@ export function createWorkspaceRoutes(workspace: WorkspaceService): Router {
     }
 
     try {
-      const result = await workspace.uploadFile(DEFAULT_USER, targetPath, file.buffer);
+      const result = await workspace.uploadFile(userId, targetPath, file.buffer);
       res.status(201).json(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -40,16 +40,17 @@ export function createWorkspaceRoutes(workspace: WorkspaceService): Router {
     }
   });
 
-  // GET /api/workspace/download/:path — download file
-  router.get("/download/*", async (req: Request, res: Response) => {
-    const filePath = (req.params as Record<string, string>)[0] ?? "";
+  // GET /api/workspace/:userId/files/:filePath — download file
+  router.get("/:userId/files/:filePath", async (req: Request, res: Response) => {
+    const userId = req.params.userId as string;
+    const filePath = req.params.filePath as string;
     if (!filePath) {
       res.status(400).json({ error: { message: "path is required" } });
       return;
     }
 
     try {
-      const content = await workspace.downloadFile(DEFAULT_USER, filePath);
+      const content = await workspace.downloadFile(userId, filePath);
       res.setHeader("Content-Disposition", `attachment; filename="${filePath.split("/").pop()}"`);
       res.send(content);
     } catch (err) {
@@ -58,16 +59,17 @@ export function createWorkspaceRoutes(workspace: WorkspaceService): Router {
     }
   });
 
-  // DELETE /api/workspace/files/:path — delete file
-  router.delete("/files/*", async (req: Request, res: Response) => {
-    const filePath = (req.params as Record<string, string>)[0] ?? "";
+  // DELETE /api/workspace/:userId/files/:filePath — delete file
+  router.delete("/:userId/files/:filePath", async (req: Request, res: Response) => {
+    const userId = req.params.userId as string;
+    const filePath = req.params.filePath as string;
     if (!filePath) {
       res.status(400).json({ error: { message: "path is required" } });
       return;
     }
 
     try {
-      await workspace.deleteFile(DEFAULT_USER, filePath);
+      await workspace.deleteFile(userId, filePath);
       res.status(204).send();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -75,9 +77,10 @@ export function createWorkspaceRoutes(workspace: WorkspaceService): Router {
     }
   });
 
-  // GET /api/workspace/path — get the workspace directory path
-  router.get("/path", (_req: Request, res: Response) => {
-    const wsPath = workspace.getWorkspacePath(DEFAULT_USER);
+  // GET /api/workspace/:userId/path — get the workspace directory path
+  router.get("/:userId/path", (req: Request, res: Response) => {
+    const userId = req.params.userId as string;
+    const wsPath = workspace.getWorkspacePath(userId);
     res.json({ path: wsPath });
   });
 
