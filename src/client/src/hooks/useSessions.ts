@@ -12,11 +12,13 @@ export function useSessions() {
     try {
       const res = await fetch(`${API_BASE}/sessions`);
       if (res.ok) {
-        const data: SessionInfo[] = await res.json();
-        setSessions(data);
+        const data = await res.json();
+        // Handle both { sessions: [...] } and plain array formats
+        const list: SessionInfo[] = Array.isArray(data) ? data : (data.sessions ?? []);
+        setSessions(list);
       }
     } catch {
-      // Silently fail — sessions list is non-critical
+      // Silently fail — server may still be starting
     } finally {
       setIsLoading(false);
     }

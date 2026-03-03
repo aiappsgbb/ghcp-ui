@@ -42,14 +42,11 @@ async function main() {
   // Health routes (no auth)
   app.use("/api", healthRoutes);
 
-  // Initialize services
+  // Initialize services (non-blocking — server listens immediately)
   const copilot = new CopilotService(config);
-  await copilot.initialize();
-
   const workspace = new WorkspaceService(config);
-  await workspace.initialize();
 
-  // API routes
+  // API routes (registered before init completes — routes guard on client readiness)
   app.use("/api/sessions", createSessionRoutes(copilot));
   app.use("/api/chat", createChatRoutes(copilot));
   app.use("/api/workspace", createWorkspaceRoutes(workspace));
@@ -77,6 +74,7 @@ async function main() {
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
+  // Start listening FIRST, then init services in background
   app.listen(config.port, () => {
     console.log(`
 ╔══════════════════════════════════════════════════╗
@@ -87,6 +85,16 @@ async function main() {
 ║   Model: ${config.azure.foundryModel.padEnd(39)}║
 ╚══════════════════════════════════════════════════╝
     `);
+
+    // Initialize heavy services after server is listening
+    Promise.all([
+      copilot.initialize(),
+      workspace.initialize(),
+    ]).then(() => {
+      console.log("[Server] All services initialized");
+    }).catch((err) => {
+      console.error("[Server] Service initialization error:", err);
+    });
   });
 }
 

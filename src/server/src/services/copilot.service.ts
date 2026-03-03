@@ -27,9 +27,14 @@ export class CopilotService {
   private client: CopilotClient | null = null;
   private sessions = new Map<string, ManagedSession>();
   private config: AppConfig;
+  private _ready = false;
 
   constructor(config: AppConfig) {
     this.config = config;
+  }
+
+  get isReady(): boolean {
+    return this._ready && this.client !== null;
   }
 
   async initialize(): Promise<void> {
@@ -46,11 +51,13 @@ export class CopilotService {
 
       this.client = new CopilotClient(clientOpts);
       await this.client.start();
+      this._ready = true;
       console.log("[CopilotService] Client started successfully");
     } catch (err) {
-      console.warn("[CopilotService] Failed to start Copilot CLI — server will run but chat will be unavailable until CLI is installed");
+      console.warn("[CopilotService] Failed to start Copilot CLI — chat unavailable");
       console.warn("[CopilotService]", (err as Error).message ?? err);
       this.client = null;
+      this._ready = false;
     }
   }
 

@@ -14,10 +14,13 @@
     "dev:client": "npm run dev -w src/client",
     "build": "npm run build -w src/client && npm run build -w src/server",
     "start": "npm run start -w src/server",
+    "test": "npx playwright test",
+    "test:ui": "npx playwright test --ui",
     "lint": "npm run lint -w src/server && npm run lint -w src/client",
     "typecheck": "npm run typecheck -w src/server && npm run typecheck -w src/client"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "concurrently": "^9.1.2",
     "typescript": "^5.7.3"
   },

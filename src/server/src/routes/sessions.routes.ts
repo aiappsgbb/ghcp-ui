@@ -6,12 +6,21 @@ export function createSessionRoutes(copilot: CopilotService): Router {
 
   // GET /api/sessions — list all sessions
   router.get("/", (_req: Request, res: Response) => {
+    if (!copilot.isReady) {
+      res.json({ sessions: [], ready: false });
+      return;
+    }
     const sessions = copilot.listSessions();
-    res.json(sessions);
+    res.json({ sessions, ready: true });
   });
 
   // POST /api/sessions — create new session
   router.post("/", async (req: Request, res: Response) => {
+    if (!copilot.isReady) {
+      res.status(503).json({ error: { message: "Copilot service is still initializing. Please wait." } });
+      return;
+    }
+
     const { model, workspacePath, mcpServers } = req.body as {
       model?: string;
       workspacePath?: string;
