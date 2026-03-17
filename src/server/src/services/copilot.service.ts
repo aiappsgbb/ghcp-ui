@@ -102,20 +102,26 @@ export class CopilotService {
       onPermissionRequest: approveAll,
     };
 
+    // Build merged MCP servers: global config + workspace FS + per-session
+    const globalMcp = this.config.mcpServers;
+    const mergedMcp: Record<string, MCPServerConfig> = { ...globalMcp };
+
     if (workingDirectory) {
       sessionConfig.workingDirectory = workingDirectory;
-      // Auto-add filesystem MCP server for workspace access
-      sessionConfig.mcpServers = {
-        workspace: {
-          type: "local" as const,
-          command: "npx",
-          args: ["-y", "@modelcontextprotocol/server-filesystem", workingDirectory],
-          tools: ["*"],
-        },
-        ...mcpServers,
+      mergedMcp.workspace = {
+        type: "local" as const,
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem", workingDirectory],
+        tools: ["*"],
       };
-    } else if (mcpServers && Object.keys(mcpServers).length > 0) {
-      sessionConfig.mcpServers = mcpServers;
+    }
+
+    if (mcpServers) {
+      Object.assign(mergedMcp, mcpServers);
+    }
+
+    if (Object.keys(mergedMcp).length > 0) {
+      sessionConfig.mcpServers = mergedMcp;
     }
 
     if (this.config.copilot.useByok) {

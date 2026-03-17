@@ -53,6 +53,11 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/azure-foundry-api-key'
           identity: managedIdentityId
         }
+        {
+          name: 'mcp-servers-json'
+          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/mcp-servers-json'
+          identity: managedIdentityId
+        }
       ]
     }
     template: {
@@ -74,6 +79,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'AZURE_FOUNDRY_API_KEY'
               secretRef: 'azure-foundry-api-key'
+            }
+            {
+              name: 'MCP_SERVERS_JSON'
+              secretRef: 'mcp-servers-json'
             }
           ]
           probes: [

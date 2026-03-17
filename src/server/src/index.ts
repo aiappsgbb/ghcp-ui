@@ -51,6 +51,16 @@ async function main() {
   app.use("/api/chat", createChatRoutes(copilot));
   app.use("/api/workspace", createWorkspaceRoutes(workspace));
 
+  // Global MCP servers endpoint (returns names only — no secrets)
+  app.get("/api/mcp-servers", (_req, res) => {
+    const servers = Object.entries(config.mcpServers).map(([name, srv]) => ({
+      name,
+      type: "type" in srv ? srv.type : "local",
+      url: "url" in srv ? srv.url : undefined,
+    }));
+    res.json({ servers });
+  });
+
   // Serve static frontend in production
   if (config.isProduction) {
     const clientDist = path.resolve(__dirname, "../../client/dist");

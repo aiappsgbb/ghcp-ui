@@ -36,12 +36,13 @@ export default function App() {
 
   const handleNewSession = useCallback(async (model?: string) => {
     try {
-      await createSession(model);
+      // Pass per-session MCP servers from settings
+      await createSession(model, mcpServers.length > 0 ? mcpServers : undefined);
       await fetchSessions();
     } catch {
       // Error handled in hook
     }
-  }, [createSession, fetchSessions]);
+  }, [createSession, fetchSessions, mcpServers]);
 
   const handleNewChatClick = useCallback(() => {
     setNewChatOpen(true);

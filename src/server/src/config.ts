@@ -1,3 +1,5 @@
+import type { MCPServerConfig } from "@github/copilot-sdk";
+
 export interface AppConfig {
   port: number;
   nodeEnv: string;
@@ -16,6 +18,34 @@ export interface AppConfig {
     githubToken?: string;
     useByok: boolean;
   };
+
+  /** Global MCP servers injected into every session */
+  mcpServers: Record<string, MCPServerConfig>;
+}
+
+/**
+ * Parse MCP_SERVERS_JSON env var.
+ * Format: JSON object where keys are server names and values are MCPServerConfig.
+ * Example:
+ *   {"github":{"type":"http","url":"https://api.githubcopilot.com/mcp","headers":{"Authorization":"Bearer ghp_xxx"},"tools":["*"]}}
+ */
+function parseMcpServers(): Record<string, MCPServerConfig> {
+  const raw = process.env.MCP_SERVERS_JSON;
+  if (!raw) return {};
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      console.warn("[Config] MCP_SERVERS_JSON must be a JSON object, ignoring");
+      return {};
+    }
+    const count = Object.keys(parsed).length;
+    console.log(`[Config] Loaded ${count} global MCP server(s): ${Object.keys(parsed).join(", ")}`);
+    return parsed as Record<string, MCPServerConfig>;
+  } catch (err) {
+    console.warn("[Config] Failed to parse MCP_SERVERS_JSON:", (err as Error).message);
+    return {};
+  }
 }
 
 export function loadConfig(): AppConfig {
@@ -44,5 +74,6 @@ export function loadConfig(): AppConfig {
       githubToken,
       useByok,
     },
+    mcpServers: parseMcpServers(),
   };
 }

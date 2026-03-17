@@ -5,6 +5,8 @@ param managedIdentityPrincipalId string
 param openAiEndpoint string
 @secure()
 param openAiKey string
+@secure()
+param mcpServersJson string = '{}'
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: name
@@ -46,6 +48,14 @@ resource openAiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: 'azure-foundry-api-key'
   properties: {
     value: openAiKey
+  }
+}
+
+resource mcpServersSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'mcp-servers-json'
+  properties: {
+    value: mcpServersJson
   }
 }
 

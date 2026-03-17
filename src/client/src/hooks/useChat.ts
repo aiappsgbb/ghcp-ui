@@ -12,13 +12,22 @@ export function useChat() {
   );
   const abortRef = useRef<AbortController | null>(null);
 
-  const createSession = useCallback(async (model?: string) => {
+  const createSession = useCallback(async (model?: string, mcpServers?: Array<{ name: string; type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>) => {
     try {
       setError(null);
+      // Convert array of MCP servers to the Record format the API expects
+      const mcpRecord = mcpServers?.reduce((acc, s) => {
+        acc[s.name] = { type: s.type, url: s.url, headers: s.headers, tools: s.tools };
+        return acc;
+      }, {} as Record<string, { type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>);
+
       const res = await fetch(`${API_BASE}/sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model }),
+        body: JSON.stringify({
+          model,
+          ...(mcpRecord && Object.keys(mcpRecord).length > 0 ? { mcpServers: mcpRecord } : {}),
+        }),
       });
       if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
       const session: SessionInfo = await res.json();

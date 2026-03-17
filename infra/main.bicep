@@ -21,6 +21,10 @@ param aiModelCapacity int = 30
 @description('Container image name (set by azd)')
 param containerImageName string = ''
 
+@secure()
+@description('MCP servers JSON config (set via azd env set MCP_SERVERS_JSON)')
+param mcpServersJson string = '{}'
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
@@ -94,6 +98,7 @@ module keyVault './modules/key-vault.bicep' = {
     managedIdentityPrincipalId: managedIdentity.outputs.principalId
     openAiEndpoint: openAi.outputs.endpoint
     openAiKey: openAi.outputs.key
+    mcpServersJson: mcpServersJson
   }
 }
 

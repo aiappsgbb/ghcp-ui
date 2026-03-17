@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { X, Server, Plus, Trash2, Globe } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Server, Plus, Trash2, Globe, Shield } from "lucide-react";
 
 export interface McpServerEntry {
   name: string;
@@ -7,6 +7,12 @@ export interface McpServerEntry {
   url: string;
   headers?: Record<string, string>;
   tools: string[];
+}
+
+interface GlobalMcpServer {
+  name: string;
+  type: string;
+  url?: string;
 }
 
 interface SettingsDrawerProps {
@@ -28,6 +34,16 @@ export function SettingsDrawer({
 }: SettingsDrawerProps) {
   const [newServerName, setNewServerName] = useState("");
   const [newServerUrl, setNewServerUrl] = useState("");
+  const [globalServers, setGlobalServers] = useState<GlobalMcpServer[]>([]);
+
+  // Fetch global MCP servers from backend
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch("/api/mcp-servers")
+      .then((r) => r.json())
+      .then((data) => setGlobalServers(data.servers ?? []))
+      .catch(() => {});
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -91,8 +107,39 @@ export function SettingsDrawer({
               <Server className="w-4 h-4" />
               MCP Servers
             </h3>
+
+            {/* Global servers (from env config) */}
+            {globalServers.length > 0 && (
+              <div className="mb-4">
+                <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <Shield className="w-3 h-3" />
+                  Global (configured by admin)
+                </p>
+                <div className="space-y-2">
+                  {globalServers.map((server) => (
+                    <div
+                      key={server.name}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-brand-950/30 border border-brand-900/40"
+                    >
+                      <Globe className="w-4 h-4 text-brand-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-zinc-200 truncate">{server.name}</p>
+                        <p className="text-[10px] text-zinc-600 truncate">
+                          {server.type}{server.url ? ` • ${server.url}` : " • local"}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Per-session servers (user-added) */}
+            <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">
+              Per-session (added by you)
+            </p>
             <p className="text-xs text-zinc-600 mb-3">
-              Connect remote MCP servers to extend Copilot with external tools (databases, APIs, etc.)
+              Add remote MCP servers for the current session.
             </p>
 
             {mcpServers.length > 0 && (
