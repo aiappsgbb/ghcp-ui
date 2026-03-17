@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.30.3.12046",
-      "templateHash": "1074437358374509950"
+      "templateHash": "3558709479757641970"
     }
   },
   "parameters": {
@@ -24,6 +24,18 @@
         "description": "Primary location for all resources"
       }
     },
+    "openAiName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the existing Azure OpenAI resource (in another resource group)"
+      }
+    },
+    "openAiResourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource group containing the existing Azure OpenAI resource"
+      }
+    },
     "aiModelName": {
       "type": "string",
       "defaultValue": "gpt-4.1",
@@ -31,25 +43,11 @@
         "description": "Name of the Azure OpenAI model deployment"
       }
     },
-    "aiModelVersion": {
-      "type": "string",
-      "defaultValue": "2025-04-14",
-      "metadata": {
-        "description": "Azure OpenAI model version"
-      }
-    },
-    "aiModelCapacity": {
-      "type": "int",
-      "defaultValue": 30,
-      "metadata": {
-        "description": "Azure OpenAI SKU capacity (tokens per minute in thousands)"
-      }
-    },
     "containerImageName": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Container image name (set by azd)"
+        "description": "Container image name (set by azd during deploy)"
       }
     },
     "mcpServersJson": {
@@ -58,6 +56,10 @@
       "metadata": {
         "description": "MCP servers JSON config (set via azd env set MCP_SERVERS_JSON)"
       }
+    },
+    "webAppExists": {
+      "type": "bool",
+      "defaultValue": false
     }
   },
   "variables": {
@@ -77,7 +79,8 @@
       "azd-env-name": "[parameters('environmentName')]",
       "project": "ghcp-ui",
       "SecurityControl": "Ignore"
-    }
+    },
+    "emptyContainerImage": "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
   },
   "resources": [
     {
@@ -318,33 +321,18 @@
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
-      "name": "ai-foundry",
-      "resourceGroup": "[format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))]",
+      "name": "openai-rbac",
+      "resourceGroup": "[parameters('openAiResourceGroupName')]",
       "properties": {
         "expressionEvaluationOptions": {
           "scope": "inner"
         },
         "mode": "Incremental",
         "parameters": {
-          "name": {
-            "value": "[format('{0}{1}', variables('abbrs').cognitiveServicesAccount, variables('resourceToken'))]"
+          "openAiName": {
+            "value": "[parameters('openAiName')]"
           },
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "tags": {
-            "value": "[variables('tags')]"
-          },
-          "modelName": {
-            "value": "[parameters('aiModelName')]"
-          },
-          "modelVersion": {
-            "value": "[parameters('aiModelVersion')]"
-          },
-          "modelCapacity": {
-            "value": "[parameters('aiModelCapacity')]"
-          },
-          "managedIdentityPrincipalId": {
+          "userAssignedIdentityPrincipalId": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'managed-identity'), '2022-09-01').outputs.principalId.value]"
           }
         },
@@ -355,106 +343,44 @@
             "_generator": {
               "name": "bicep",
               "version": "0.30.3.12046",
-              "templateHash": "12126813086895502522"
+              "templateHash": "9725977886455050611"
             }
           },
           "parameters": {
-            "name": {
+            "openAiName": {
               "type": "string"
             },
-            "location": {
-              "type": "string"
-            },
-            "tags": {
-              "type": "object",
-              "defaultValue": {}
-            },
-            "modelName": {
-              "type": "string"
-            },
-            "modelVersion": {
-              "type": "string"
-            },
-            "modelCapacity": {
-              "type": "int"
-            },
-            "managedIdentityPrincipalId": {
+            "userAssignedIdentityPrincipalId": {
               "type": "string"
             }
           },
           "resources": [
             {
-              "type": "Microsoft.CognitiveServices/accounts",
-              "apiVersion": "2024-10-01",
-              "name": "[parameters('name')]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "kind": "OpenAI",
-              "sku": {
-                "name": "S0"
-              },
-              "properties": {
-                "customSubDomainName": "[parameters('name')]",
-                "publicNetworkAccess": "Enabled"
-              }
-            },
-            {
-              "type": "Microsoft.CognitiveServices/accounts/deployments",
-              "apiVersion": "2024-10-01",
-              "name": "[format('{0}/{1}', parameters('name'), parameters('modelName'))]",
-              "sku": {
-                "name": "Standard",
-                "capacity": "[parameters('modelCapacity')]"
-              },
-              "properties": {
-                "model": {
-                  "format": "OpenAI",
-                  "name": "[parameters('modelName')]",
-                  "version": "[parameters('modelVersion')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
-              ]
-            },
-            {
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.CognitiveServices/accounts/{0}', parameters('name'))]",
-              "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', parameters('name')), parameters('managedIdentityPrincipalId'), 'cognitive-services-openai-user')]",
+              "scope": "[format('Microsoft.CognitiveServices/accounts/{0}', parameters('openAiName'))]",
+              "name": "[guid(resourceId('Microsoft.CognitiveServices/accounts', parameters('openAiName')), parameters('userAssignedIdentityPrincipalId'), 'Cognitive Services OpenAI User')]",
               "properties": {
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')]",
-                "principalId": "[parameters('managedIdentityPrincipalId')]",
+                "principalId": "[parameters('userAssignedIdentityPrincipalId')]",
                 "principalType": "ServicePrincipal"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
-              ]
+              }
             }
           ],
           "outputs": {
-            "id": {
+            "openAiEndpoint": {
               "type": "string",
-              "value": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]"
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', parameters('openAiName')), '2024-10-01').endpoint]"
             },
-            "name": {
+            "openAiKey": {
               "type": "string",
-              "value": "[parameters('name')]"
-            },
-            "endpoint": {
-              "type": "string",
-              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', parameters('name')), '2024-10-01').endpoint]"
-            },
-            "key": {
-              "type": "string",
-              "value": "[listKeys(resourceId('Microsoft.CognitiveServices/accounts', parameters('name')), '2024-10-01').key1]"
+              "value": "[listKeys(resourceId('Microsoft.CognitiveServices/accounts', parameters('openAiName')), '2024-10-01').key1]"
             }
           }
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'managed-identity')]",
-        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName')))]"
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'managed-identity')]"
       ]
     },
     {
@@ -481,10 +407,10 @@
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'managed-identity'), '2022-09-01').outputs.principalId.value]"
           },
           "openAiEndpoint": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'ai-foundry'), '2022-09-01').outputs.endpoint.value]"
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('openAiResourceGroupName')), 'Microsoft.Resources/deployments', 'openai-rbac'), '2022-09-01').outputs.openAiEndpoint.value]"
           },
           "openAiKey": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'ai-foundry'), '2022-09-01').outputs.key.value]"
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('openAiResourceGroupName')), 'Microsoft.Resources/deployments', 'openai-rbac'), '2022-09-01').outputs.openAiKey.value]"
           },
           "mcpServersJson": {
             "value": "[parameters('mcpServersJson')]"
@@ -609,7 +535,7 @@
       },
       "dependsOn": [
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'managed-identity')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'ai-foundry')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('openAiResourceGroupName')), 'Microsoft.Resources/deployments', 'openai-rbac')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName')))]"
       ]
     },
@@ -903,6 +829,55 @@
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
+      "name": "web-app-image",
+      "resourceGroup": "[format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "exists": {
+            "value": "[parameters('webAppExists')]"
+          },
+          "name": {
+            "value": "[format('{0}{1}', variables('abbrs').containerApp, variables('resourceToken'))]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.3.12046",
+              "templateHash": "7248809509236443755"
+            }
+          },
+          "parameters": {
+            "exists": {
+              "type": "bool"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "resources": [],
+          "outputs": {
+            "containers": {
+              "type": "array",
+              "value": "[if(parameters('exists'), reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2023-05-01').template.containers, createArray())]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
       "name": "container-app",
       "resourceGroup": "[format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))]",
       "properties": {
@@ -926,7 +901,7 @@
           "containerRegistryName": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'container-registry'), '2022-09-01').outputs.name.value]"
           },
-          "containerImageName": "[if(not(empty(parameters('containerImageName'))), createObject('value', parameters('containerImageName')), createObject('value', 'ghcp-ui:latest'))]",
+          "containerImageName": "[if(not(empty(parameters('containerImageName'))), createObject('value', parameters('containerImageName')), if(parameters('webAppExists'), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'web-app-image'), '2022-09-01').outputs.containers.value[0].image), createObject('value', variables('emptyContainerImage'))))]",
           "managedIdentityId": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'managed-identity'), '2022-09-01').outputs.id.value]"
           },
@@ -934,7 +909,7 @@
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'managed-identity'), '2022-09-01').outputs.clientId.value]"
           },
           "openAiEndpoint": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'ai-foundry'), '2022-09-01').outputs.endpoint.value]"
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('openAiResourceGroupName')), 'Microsoft.Resources/deployments', 'openai-rbac'), '2022-09-01').outputs.openAiEndpoint.value]"
           },
           "openAiModelName": {
             "value": "[parameters('aiModelName')]"
@@ -953,7 +928,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.30.3.12046",
-              "templateHash": "15374990460811440919"
+              "templateHash": "3330189729080021232"
             }
           },
           "parameters": {
@@ -1041,7 +1016,7 @@
                   "containers": [
                     {
                       "name": "web",
-                      "image": "[format('{0}/{1}', reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-11-01-preview').loginServer, parameters('containerImageName'))]",
+                      "image": "[parameters('containerImageName')]",
                       "resources": {
                         "cpu": "[json('0.5')]",
                         "memory": "1Gi"
@@ -1170,9 +1145,10 @@
       "dependsOn": [
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'container-apps-env')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'container-registry')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'web-app-image')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'key-vault')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'managed-identity')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'ai-foundry')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('openAiResourceGroupName')), 'Microsoft.Resources/deployments', 'openai-rbac')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName')))]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'storage-account')]"
       ]
@@ -1201,7 +1177,7 @@
     },
     "AZURE_OPENAI_ENDPOINT": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}{1}', variables('abbrs').resourceGroup, parameters('environmentName'))), 'Microsoft.Resources/deployments', 'ai-foundry'), '2022-09-01').outputs.endpoint.value]"
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('openAiResourceGroupName')), 'Microsoft.Resources/deployments', 'openai-rbac'), '2022-09-01').outputs.openAiEndpoint.value]"
     },
     "AZURE_OPENAI_MODEL_NAME": {
       "type": "string",

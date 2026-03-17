@@ -9,21 +9,24 @@ param environmentName string
 @description('Primary location for all resources')
 param location string
 
+@description('Name of the existing Azure OpenAI resource (in another resource group)')
+param openAiName string
+
+@description('Resource group containing the existing Azure OpenAI resource')
+param openAiResourceGroupName string
+
 @description('Name of the Azure OpenAI model deployment')
 param aiModelName string = 'gpt-4.1'
 
-@description('Azure OpenAI model version')
-param aiModelVersion string = '2025-04-14'
-
-@description('Azure OpenAI SKU capacity (tokens per minute in thousands)')
-param aiModelCapacity int = 30
-
-@description('Container image name (set by azd)')
+@description('Container image name (set by azd during deploy)')
 param containerImageName string = ''
 
 @secure()
 @description('MCP servers JSON config (set via azd env set MCP_SERVERS_JSON)')
 param mcpServersJson string = '{}'
+
+// azd system variable: tells us if the container app already exists
+param webAppExists bool = false
 
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -33,6 +36,7 @@ var tags = {
   // Azure Files on ACA requires storage account key (Entra ID auth not supported for SMB mounts)
   SecurityControl: 'Ignore'
 }
+var emptyContainerImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
 // Resource Group
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
@@ -63,7 +67,7 @@ module containerRegistry './modules/container-registry.bicep' = {
   }
 }
 
-// Managed Identity
+// Managed Identity (UAMI for the whole app)
 module managedIdentity './modules/managed-identity.bicep' = {
   name: 'managed-identity'
   scope: rg
@@ -74,18 +78,13 @@ module managedIdentity './modules/managed-identity.bicep' = {
   }
 }
 
-// Azure OpenAI (AI Foundry)
-module openAi './modules/ai-foundry.bicep' = {
-  name: 'ai-foundry'
-  scope: rg
+// Cross-RG: assign RBAC on the EXISTING Azure OpenAI resource
+module openAiRbac './modules/openai-rbac.bicep' = {
+  name: 'openai-rbac'
+  scope: resourceGroup(openAiResourceGroupName)
   params: {
-    name: '${abbrs.cognitiveServicesAccount}${resourceToken}'
-    location: location
-    tags: tags
-    modelName: aiModelName
-    modelVersion: aiModelVersion
-    modelCapacity: aiModelCapacity
-    managedIdentityPrincipalId: managedIdentity.outputs.principalId
+    openAiName: openAiName
+    userAssignedIdentityPrincipalId: managedIdentity.outputs.principalId
   }
 }
 
@@ -98,13 +97,13 @@ module keyVault './modules/key-vault.bicep' = {
     location: location
     tags: tags
     managedIdentityPrincipalId: managedIdentity.outputs.principalId
-    openAiEndpoint: openAi.outputs.endpoint
-    openAiKey: openAi.outputs.key
+    openAiEndpoint: openAiRbac.outputs.openAiEndpoint
+    openAiKey: openAiRbac.outputs.openAiKey
     mcpServersJson: mcpServersJson
   }
 }
 
-// Storage Account (workspace files)
+// Storage Account (workspace files + Azure Files share)
 module storageAccount './modules/storage-account.bicep' = {
   name: 'storage-account'
   scope: rg
@@ -131,6 +130,17 @@ module containerAppsEnv './modules/container-apps-environment.bicep' = {
   }
 }
 
+// Fetch existing container image to avoid overwriting during provision
+// See: https://johnnyreilly.com/using-azd-for-faster-incremental-azure-container-app-deployments-in-azure-devops
+module fetchLatestImage './fetch-container-image.bicep' = {
+  name: 'web-app-image'
+  scope: rg
+  params: {
+    exists: webAppExists
+    name: '${abbrs.containerApp}${resourceToken}'
+  }
+}
+
 // Container App
 module containerApp './modules/container-app.bicep' = {
   name: 'container-app'
@@ -141,10 +151,10 @@ module containerApp './modules/container-app.bicep' = {
     tags: tags
     containerAppsEnvironmentId: containerAppsEnv.outputs.id
     containerRegistryName: containerRegistry.outputs.name
-    containerImageName: !empty(containerImageName) ? containerImageName : 'ghcp-ui:latest'
+    containerImageName: !empty(containerImageName) ? containerImageName : (webAppExists ? fetchLatestImage.outputs.containers[0].image : emptyContainerImage)
     managedIdentityId: managedIdentity.outputs.id
     managedIdentityClientId: managedIdentity.outputs.clientId
-    openAiEndpoint: openAi.outputs.endpoint
+    openAiEndpoint: openAiRbac.outputs.openAiEndpoint
     openAiModelName: aiModelName
     keyVaultName: keyVault.outputs.name
     storageAccountName: storageAccount.outputs.name
@@ -157,7 +167,7 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.logi
 output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.name
 output AZURE_CONTAINER_APP_NAME string = containerApp.outputs.name
 output AZURE_CONTAINER_APP_FQDN string = containerApp.outputs.fqdn
-output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
+output AZURE_OPENAI_ENDPOINT string = openAiRbac.outputs.openAiEndpoint
 output AZURE_OPENAI_MODEL_NAME string = aiModelName
 output AZURE_STORAGE_ACCOUNT_NAME string = storageAccount.outputs.name
 output SERVICE_WEB_ENDPOINTS array = [containerApp.outputs.uri]

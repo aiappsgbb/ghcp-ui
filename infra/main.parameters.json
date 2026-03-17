@@ -8,6 +8,12 @@
     "location": {
       "value": "${AZURE_LOCATION}"
     },
+    "openAiName": {
+      "value": "${AZURE_OPENAI_NAME}"
+    },
+    "openAiResourceGroupName": {
+      "value": "${AZURE_OPENAI_RG}"
+    },
     "aiModelName": {
       "value": "${AZURE_OPENAI_MODEL_NAME=gpt-4.1}"
     },
@@ -16,6 +22,9 @@
     },
     "mcpServersJson": {
       "value": "${MCP_SERVERS_JSON={}}"
+    },
+    "webAppExists": {
+      "value": "${SERVICE_WEB_RESOURCE_EXISTS=false}"
     }
   }
 }
