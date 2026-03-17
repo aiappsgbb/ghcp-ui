@@ -76,6 +76,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_FOUNDRY_MODEL', value: openAiModelName }
             { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
             { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
+            { name: 'WORKSPACE_MOUNT_PATH', value: '/data/workspaces' }
             {
               name: 'AZURE_FOUNDRY_API_KEY'
               secretRef: 'azure-foundry-api-key'
@@ -83,6 +84,12 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'MCP_SERVERS_JSON'
               secretRef: 'mcp-servers-json'
+            }
+          ]
+          volumeMounts: [
+            {
+              volumeName: 'workspace-volume'
+              mountPath: '/data/workspaces'
             }
           ]
           probes: [
@@ -104,6 +111,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               periodSeconds: 10
             }
           ]
+        }
+      ]
+      volumes: [
+        {
+          name: 'workspace-volume'
+          storageName: 'workspacestorage'
+          storageType: 'AzureFile'
         }
       ]
       scale: {

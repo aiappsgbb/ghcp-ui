@@ -47,7 +47,7 @@ async function main() {
   const workspace = new WorkspaceService(config);
 
   // API routes (registered before init completes — routes guard on client readiness)
-  app.use("/api/sessions", createSessionRoutes(copilot));
+  app.use("/api/sessions", createSessionRoutes(copilot, workspace));
   app.use("/api/chat", createChatRoutes(copilot));
   app.use("/api/workspace", createWorkspaceRoutes(workspace));
 

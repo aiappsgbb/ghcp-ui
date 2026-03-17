@@ -30,6 +30,8 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 var tags = {
   'azd-env-name': environmentName
   project: 'ghcp-ui'
+  // Azure Files on ACA requires storage account key (Entra ID auth not supported for SMB mounts)
+  SecurityControl: 'Ignore'
 }
 
 // Resource Group
@@ -123,6 +125,9 @@ module containerAppsEnv './modules/container-apps-environment.bicep' = {
     location: location
     tags: tags
     logAnalyticsWorkspaceId: logAnalytics.outputs.id
+    storageAccountName: storageAccount.outputs.name
+    storageAccountKey: storageAccount.outputs.accountKey
+    fileShareName: storageAccount.outputs.fileShareName
   }
 }
 

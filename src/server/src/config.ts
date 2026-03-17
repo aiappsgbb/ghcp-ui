@@ -19,6 +19,9 @@ export interface AppConfig {
     useByok: boolean;
   };
 
+  /** Base directory for workspace files (Azure Files mount or local temp) */
+  workspaceMountPath: string;
+
   /** Global MCP servers injected into every session */
   mcpServers: Record<string, MCPServerConfig>;
 }
@@ -74,6 +77,7 @@ export function loadConfig(): AppConfig {
       githubToken,
       useByok,
     },
+    workspaceMountPath: process.env.WORKSPACE_MOUNT_PATH ?? "",
     mcpServers: parseMcpServers(),
   };
 }

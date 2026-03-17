@@ -84,5 +84,49 @@ export function createWorkspaceRoutes(workspace: WorkspaceService): Router {
     res.json({ path: wsPath });
   });
 
+  // --- Folder management ---
+
+  // GET /api/workspace/:userId/folders — list workspace folders
+  router.get("/:userId/folders", async (req: Request, res: Response) => {
+    const userId = req.params.userId as string;
+    try {
+      const folders = await workspace.listFolders(userId);
+      res.json({ folders });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      res.status(500).json({ error: { message } });
+    }
+  });
+
+  // POST /api/workspace/:userId/folders — create a workspace folder
+  router.post("/:userId/folders", async (req: Request, res: Response) => {
+    const userId = req.params.userId as string;
+    const folderName = req.body.name as string;
+    if (!folderName || /[\/\\:*?"<>|]/.test(folderName)) {
+      res.status(400).json({ error: { message: "Invalid folder name" } });
+      return;
+    }
+    try {
+      await workspace.createFolder(userId, folderName);
+      res.status(201).json({ name: folderName });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      res.status(500).json({ error: { message } });
+    }
+  });
+
+  // DELETE /api/workspace/:userId/folders/:folderName — delete a workspace folder
+  router.delete("/:userId/folders/:folderName", async (req: Request, res: Response) => {
+    const userId = req.params.userId as string;
+    const folderName = req.params.folderName as string;
+    try {
+      await workspace.deleteFile(userId, folderName);
+      res.status(204).send();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      res.status(500).json({ error: { message } });
+    }
+  });
+
   return router;
 }

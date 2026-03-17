@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   FolderOpen,
+  FolderPlus,
   Upload,
   Trash2,
   Download,
   File,
+  Folder,
   X,
   RefreshCw,
   ChevronRight,
+  Check,
 } from "lucide-react";
 
 interface WorkspaceFile {
@@ -15,12 +18,15 @@ interface WorkspaceFile {
   path: string;
   size: number;
   lastModified: string;
+  isDirectory?: boolean;
 }
 
 interface WorkspacePanelProps {
   isOpen: boolean;
   onClose: () => void;
   sessionId: string | null;
+  activeFolder: string;
+  onFolderChange: (folder: string) => void;
 }
 
 const API_BASE = "/api";
@@ -37,19 +43,40 @@ export function WorkspacePanel({
   isOpen,
   onClose,
   sessionId,
+  activeFolder,
+  onFolderChange,
 }: WorkspacePanelProps) {
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const [folders, setFolders] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const newFolderRef = useRef<HTMLInputElement>(null);
 
   const userId = "default";
+
+  const fetchFolders = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/workspace/${userId}/folders`);
+      if (res.ok) {
+        const data = await res.json();
+        setFolders(data.folders ?? []);
+      }
+    } catch {
+      // silent
+    }
+  }, [userId]);
 
   const fetchFiles = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/workspace/${userId}/files`);
+      const dirPath = activeFolder ? activeFolder : "";
+      const res = await fetch(
+        `${API_BASE}/workspace/${userId}/files?path=${encodeURIComponent(dirPath)}`
+      );
       if (res.ok) {
         const data = await res.json();
         setFiles(data.files ?? []);
@@ -59,11 +86,53 @@ export function WorkspacePanel({
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, activeFolder]);
 
   useEffect(() => {
-    if (isOpen) fetchFiles();
-  }, [isOpen, fetchFiles]);
+    if (isOpen) {
+      fetchFolders();
+      fetchFiles();
+    }
+  }, [isOpen, fetchFolders, fetchFiles]);
+
+  useEffect(() => {
+    if (showNewFolder) newFolderRef.current?.focus();
+  }, [showNewFolder]);
+
+  const handleCreateFolder = useCallback(async () => {
+    const name = newFolderName.trim();
+    if (!name) return;
+    try {
+      await fetch(`${API_BASE}/workspace/${userId}/folders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      setNewFolderName("");
+      setShowNewFolder(false);
+      await fetchFolders();
+      onFolderChange(name);
+    } catch {
+      // silent
+    }
+  }, [userId, newFolderName, fetchFolders, onFolderChange]);
+
+  const handleDeleteFolder = useCallback(
+    async (folderName: string) => {
+      if (!confirm(`Delete folder "${folderName}" and all its contents?`)) return;
+      try {
+        await fetch(`${API_BASE}/workspace/${userId}/folders/${encodeURIComponent(folderName)}`, {
+          method: "DELETE",
+        });
+        if (activeFolder === folderName) onFolderChange("");
+        await fetchFolders();
+        await fetchFiles();
+      } catch {
+        // silent
+      }
+    },
+    [userId, activeFolder, onFolderChange, fetchFolders, fetchFiles]
+  );
 
   const handleUpload = useCallback(
     async (fileList: FileList) => {
@@ -72,6 +141,10 @@ export function WorkspacePanel({
         for (const file of Array.from(fileList)) {
           const form = new FormData();
           form.append("file", file);
+          const targetPath = activeFolder
+            ? `${activeFolder}/${file.name}`
+            : file.name;
+          form.append("path", targetPath);
           await fetch(`${API_BASE}/workspace/${userId}/files`, {
             method: "POST",
             body: form,
@@ -84,16 +157,17 @@ export function WorkspacePanel({
         setUploading(false);
       }
     },
-    [userId, fetchFiles]
+    [userId, activeFolder, fetchFiles]
   );
 
   const handleDelete = useCallback(
-    async (path: string) => {
+    async (filePath: string) => {
       try {
-        await fetch(`${API_BASE}/workspace/${userId}/files/${path}`, {
-          method: "DELETE",
-        });
-        setFiles((prev) => prev.filter((f) => f.path !== path));
+        await fetch(
+          `${API_BASE}/workspace/${userId}/files/${encodeURIComponent(filePath)}`,
+          { method: "DELETE" }
+        );
+        setFiles((prev) => prev.filter((f) => f.path !== filePath));
       } catch {
         // silent
       }
@@ -102,8 +176,11 @@ export function WorkspacePanel({
   );
 
   const handleDownload = useCallback(
-    (path: string) => {
-      window.open(`${API_BASE}/workspace/${userId}/files/${path}`, "_blank");
+    (filePath: string) => {
+      window.open(
+        `${API_BASE}/workspace/${userId}/files/${encodeURIComponent(filePath)}`,
+        "_blank"
+      );
     },
     [userId]
   );
@@ -127,11 +204,18 @@ export function WorkspacePanel({
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-2 text-[var(--color-text-primary)]">
             <FolderOpen size={18} />
-            <span className="font-semibold text-sm">Workspace Files</span>
+            <span className="font-semibold text-sm">Workspace</span>
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={fetchFiles}
+              onClick={() => setShowNewFolder(true)}
+              className="p-2 rounded-lg hover:bg-white/5 text-[var(--color-text-secondary)] min-h-[44px] min-w-[44px] flex items-center justify-center"
+              title="New folder"
+            >
+              <FolderPlus size={16} />
+            </button>
+            <button
+              onClick={() => { fetchFolders(); fetchFiles(); }}
               disabled={loading}
               className="p-2 rounded-lg hover:bg-white/5 text-[var(--color-text-secondary)] min-h-[44px] min-w-[44px] flex items-center justify-center"
               title="Refresh"
@@ -146,6 +230,87 @@ export function WorkspacePanel({
             </button>
           </div>
         </div>
+
+        {/* Folder switcher */}
+        <div className="px-3 pt-3">
+          <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)] mb-1.5 px-1">
+            Folders
+          </p>
+
+          {/* New folder input */}
+          {showNewFolder && (
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <input
+                ref={newFolderRef}
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreateFolder();
+                  if (e.key === "Escape") {
+                    setShowNewFolder(false);
+                    setNewFolderName("");
+                  }
+                }}
+                placeholder="Folder name…"
+                className="flex-1 bg-white/5 border border-[var(--color-border)] rounded px-2 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)] focus:outline-none focus:border-[var(--color-brand)]"
+                style={{ fontSize: "16px" }}
+              />
+              <button
+                onClick={handleCreateFolder}
+                className="p-1.5 rounded hover:bg-white/10 text-green-400 min-h-[44px] min-w-[44px] flex items-center justify-center"
+              >
+                <Check size={14} />
+              </button>
+              <button
+                onClick={() => { setShowNewFolder(false); setNewFolderName(""); }}
+                className="p-1.5 rounded hover:bg-white/10 text-[var(--color-text-secondary)] min-h-[44px] min-w-[44px] flex items-center justify-center"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Root folder option */}
+          <button
+            onClick={() => onFolderChange("")}
+            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+              activeFolder === ""
+                ? "bg-[var(--color-brand)]/15 text-[var(--color-brand)]"
+                : "text-[var(--color-text-secondary)] hover:bg-white/5"
+            }`}
+          >
+            <FolderOpen size={14} />
+            <span className="truncate">Root</span>
+          </button>
+
+          {/* User folders */}
+          {folders.map((f) => (
+            <div
+              key={f}
+              className={`group flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
+                activeFolder === f
+                  ? "bg-[var(--color-brand)]/15 text-[var(--color-brand)]"
+                  : "text-[var(--color-text-secondary)] hover:bg-white/5"
+              }`}
+              onClick={() => onFolderChange(f)}
+            >
+              <Folder size={14} className="shrink-0" />
+              <span className="flex-1 truncate">{f}</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteFolder(f);
+                }}
+                className="p-1 rounded hover:bg-red-500/20 text-red-400 opacity-0 group-hover:opacity-100 active:opacity-100 transition-opacity"
+                title="Delete folder"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <hr className="mx-3 mt-2 border-[var(--color-border)]" />
 
         {/* Upload zone */}
         <div
@@ -169,7 +334,7 @@ export function WorkspacePanel({
           <p className="text-xs text-[var(--color-text-secondary)]">
             {uploading
               ? "Uploading…"
-              : "Drop files here or tap to upload"}
+              : `Drop files here${activeFolder ? ` → ${activeFolder}` : ""}`}
           </p>
           <input
             ref={fileInputRef}
@@ -188,8 +353,9 @@ export function WorkspacePanel({
           <div className="mx-3 mt-2 px-3 py-2 bg-white/5 rounded-lg flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
             <ChevronRight size={12} />
             <span>
-              Workspace is mounted in current session. AI can read/write these
-              files.
+              {activeFolder
+                ? `Folder "${activeFolder}" is mounted in the current session.`
+                : "Root workspace is mounted in the current session."}
             </span>
           </div>
         )}
@@ -207,7 +373,9 @@ export function WorkspacePanel({
             </div>
           ) : (
             <ul className="space-y-1">
-              {files.map((f) => (
+              {files
+                .filter((f) => !f.isDirectory)
+                .map((f) => (
                 <li
                   key={f.path}
                   className="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors"

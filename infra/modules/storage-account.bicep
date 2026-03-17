@@ -2,6 +2,7 @@ param name string
 param location string
 param tags object = {}
 param containerName string = 'workspaces'
+param fileShareName string = 'workspaces'
 param managedIdentityPrincipalId string
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
@@ -29,6 +30,21 @@ resource container 'Microsoft.Storage/storageAccounts/blobServices/containers@20
   name: containerName
 }
 
+// Azure Files share for persistent workspace storage
+resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-05-01' = {
+  parent: storageAccount
+  name: 'default'
+}
+
+resource fileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
+  parent: fileService
+  name: fileShareName
+  properties: {
+    shareQuota: 10 // 10 GiB
+    accessTier: 'TransactionOptimized'
+  }
+}
+
 // Storage Blob Data Contributor for managed identity
 resource storageBlobRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: storageAccount
@@ -43,3 +59,5 @@ resource storageBlobRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
 output id string = storageAccount.id
 output name string = storageAccount.name
 output blobEndpoint string = storageAccount.properties.primaryEndpoints.blob
+output fileShareName string = fileShare.name
+output accountKey string = storageAccount.listKeys().keys[0].value

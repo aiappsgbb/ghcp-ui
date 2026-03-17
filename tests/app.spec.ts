@@ -44,7 +44,7 @@ test.describe("GHCP UI", () => {
   test("has workspace button that opens workspace panel", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("Workspace files").click();
-    await expect(page.getByText("Workspace Files")).toBeVisible();
+    await expect(page.getByText("Workspace", { exact: true })).toBeVisible();
   });
 
   test("input bar is disabled when no session is active", async ({ page }) => {
@@ -129,5 +129,42 @@ test.describe("Speech-to-Text", () => {
     await page.goto("/");
     const textarea = page.locator("textarea");
     await expect(textarea).toHaveAttribute("placeholder", "Create a new chat to get started…");
+  });
+});
+
+test.describe("Workspace & Folders", () => {
+  test("workspace panel shows folder section", async ({ page }) => {
+    await page.goto("/");
+    await page.getByLabel("Workspace files").click();
+    await expect(page.getByText("Folders")).toBeVisible();
+    await expect(page.getByText("Root")).toBeVisible();
+  });
+
+  test("workspace panel has new folder button", async ({ page }) => {
+    await page.goto("/");
+    await page.getByLabel("Workspace files").click();
+    await expect(page.getByTitle("New folder")).toBeVisible();
+  });
+
+  test("folders API returns valid response", async ({ request }) => {
+    const res = await request.get("/api/workspace/default/folders");
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data).toHaveProperty("folders");
+    expect(Array.isArray(data.folders)).toBe(true);
+  });
+
+  test("can create and list a folder", async ({ request }) => {
+    const createRes = await request.post("/api/workspace/default/folders", {
+      data: { name: "test-project" },
+    });
+    expect(createRes.status()).toBe(201);
+
+    const listRes = await request.get("/api/workspace/default/folders");
+    const data = await listRes.json();
+    expect(data.folders).toContain("test-project");
+
+    // Clean up
+    await request.delete("/api/workspace/default/folders/test-project");
   });
 });

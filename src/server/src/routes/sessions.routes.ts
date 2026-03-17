@@ -1,7 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import type { CopilotService } from "../services/copilot.service.js";
+import type { WorkspaceService } from "../services/workspace.service.js";
 
-export function createSessionRoutes(copilot: CopilotService): Router {
+export function createSessionRoutes(copilot: CopilotService, workspace: WorkspaceService): Router {
   const router = Router();
 
   // GET /api/sessions — list all sessions
@@ -27,8 +28,14 @@ export function createSessionRoutes(copilot: CopilotService): Router {
       mcpServers?: Record<string, { type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>;
     };
 
+    // Resolve workspace folder name to absolute path
+    const userId = "default";
+    const resolvedPath = workspacePath
+      ? workspace.getFolderPath(userId, workspacePath)
+      : workspace.getWorkspacePath(userId);
+
     try {
-      const session = await copilot.createSession(model, workspacePath, mcpServers);
+      const session = await copilot.createSession(model, resolvedPath, mcpServers);
       res.status(201).json(session);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";

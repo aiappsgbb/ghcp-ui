@@ -15,6 +15,7 @@ export default function App() {
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServerEntry[]>([]);
+  const [activeFolder, setActiveFolder] = useState("");
 
   const {
     messages,
@@ -36,13 +37,14 @@ export default function App() {
 
   const handleNewSession = useCallback(async (model?: string) => {
     try {
-      // Pass per-session MCP servers from settings
-      await createSession(model, mcpServers.length > 0 ? mcpServers : undefined);
+      // Build workspace path from active folder
+      const wsPath = activeFolder || undefined;
+      await createSession(model, mcpServers.length > 0 ? mcpServers : undefined, wsPath);
       await fetchSessions();
     } catch {
       // Error handled in hook
     }
-  }, [createSession, fetchSessions, mcpServers]);
+  }, [createSession, fetchSessions, mcpServers, activeFolder]);
 
   const handleNewChatClick = useCallback(() => {
     setNewChatOpen(true);
@@ -139,6 +141,8 @@ export default function App() {
         isOpen={workspaceOpen}
         onClose={() => setWorkspaceOpen(false)}
         sessionId={currentSession?.id ?? null}
+        activeFolder={activeFolder}
+        onFolderChange={setActiveFolder}
       />
     </div>
   );

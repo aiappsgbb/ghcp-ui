@@ -24,8 +24,10 @@ export class WorkspaceService {
 
   constructor(config: AppConfig) {
     this.config = config;
-    this.localBaseDir = path.join(os.tmpdir(), "ghcp-workspaces");
+    // Use mounted Azure Files path if available, otherwise temp dir
+    this.localBaseDir = config.workspaceMountPath || path.join(os.tmpdir(), "ghcp-workspaces");
     fs.mkdirSync(this.localBaseDir, { recursive: true });
+    console.log(`[WorkspaceService] Workspace base: ${this.localBaseDir}`);
   }
 
   async initialize(): Promise<void> {
@@ -141,7 +143,12 @@ export class WorkspaceService {
     const fullPath = path.join(wsDir, filePath);
 
     if (fs.existsSync(fullPath)) {
-      fs.unlinkSync(fullPath);
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) {
+        fs.rmSync(fullPath, { recursive: true, force: true });
+      } else {
+        fs.unlinkSync(fullPath);
+      }
     }
 
     if (this.containerClient) {
@@ -149,6 +156,32 @@ export class WorkspaceService {
       const blockBlob = this.containerClient.getBlockBlobClient(blobName);
       await blockBlob.deleteIfExists();
     }
+  }
+
+  /** List top-level workspace folders for a user */
+  async listFolders(userId: string): Promise<string[]> {
+    const wsDir = this.getWorkspacePath(userId);
+    if (!fs.existsSync(wsDir)) return [];
+    return fs
+      .readdirSync(wsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+  }
+
+  /** Create a new workspace folder */
+  async createFolder(userId: string, folderName: string): Promise<void> {
+    const wsDir = this.getWorkspacePath(userId);
+    const fullPath = path.join(wsDir, folderName);
+    fs.mkdirSync(fullPath, { recursive: true });
+  }
+
+  /** Get the absolute path of a user's workspace folder */
+  getFolderPath(userId: string, folderName: string): string {
+    const wsDir = this.getWorkspacePath(userId);
+    const fullPath = path.join(wsDir, folderName);
+    fs.mkdirSync(fullPath, { recursive: true });
+    return fullPath;
   }
 
   async syncFromBlob(userId: string): Promise<void> {
