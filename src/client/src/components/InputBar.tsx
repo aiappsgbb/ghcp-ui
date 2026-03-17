@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, type KeyboardEvent } from "react";
-import { Send, Square, Loader2 } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
+import { Send, Square, Loader2, Mic, MicOff } from "lucide-react";
+import { useSpeechToText } from "../hooks/useSpeechToText";
 
 interface InputBarProps {
   onSend: (message: string) => void;
@@ -11,6 +12,19 @@ interface InputBarProps {
 export function InputBar({ onSend, onStop, isLoading, disabled }: InputBarProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleSttResult = useCallback((transcript: string) => {
+    setInput(transcript);
+  }, []);
+
+  const {
+    isListening,
+    interimTranscript,
+    isSupported: sttSupported,
+    toggleListening,
+    stopListening,
+    error: sttError,
+  } = useSpeechToText({ onResult: handleSttResult });
 
   useEffect(() => {
     if (!isLoading && textareaRef.current) {
@@ -25,11 +39,12 @@ export function InputBar({ onSend, onStop, isLoading, disabled }: InputBarProps)
       ta.style.height = "auto";
       ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
     }
-  }, [input]);
+  }, [input, interimTranscript]);
 
   const handleSubmit = () => {
     const trimmed = input.trim();
     if (!trimmed || isLoading || disabled) return;
+    stopListening();
     onSend(trimmed);
     setInput("");
     if (textareaRef.current) {
@@ -44,24 +59,63 @@ export function InputBar({ onSend, onStop, isLoading, disabled }: InputBarProps)
     }
   };
 
+  const displayValue = interimTranscript
+    ? `${input}${input ? " " : ""}${interimTranscript}`
+    : input;
+
   return (
     <div className="border-t border-zinc-800 bg-zinc-950 px-3 sm:px-4 py-3 safe-bottom">
       <div className="max-w-3xl mx-auto">
-        <div className="flex items-end gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-3 sm:px-4 py-2 focus-within:border-brand-500 transition-colors">
+        {/* STT error banner */}
+        {sttError && (
+          <p className="text-xs text-red-400 mb-1.5 px-1">{sttError}</p>
+        )}
+
+        <div
+          className={`flex items-end gap-2 rounded-xl border bg-zinc-900 px-3 sm:px-4 py-2 transition-colors ${
+            isListening
+              ? "border-red-500/60 shadow-[0_0_12px_rgba(239,68,68,0.15)]"
+              : "border-zinc-700 focus-within:border-brand-500"
+          }`}
+        >
           <textarea
             ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            value={displayValue}
+            onChange={(e) => {
+              setInput(e.target.value);
+            }}
             onKeyDown={handleKeyDown}
             placeholder={
               disabled
                 ? "Create a new chat to get started…"
-                : "Message Copilot…"
+                : isListening
+                  ? "Listening… speak now"
+                  : "Message Copilot…"
             }
             disabled={disabled || isLoading}
             rows={1}
             className="flex-1 bg-transparent resize-none text-sm sm:text-base text-zinc-100 placeholder-zinc-600 outline-none py-1.5 max-h-[200px]"
           />
+
+          {/* Mic button — only shown if browser supports Web Speech API */}
+          {sttSupported && !isLoading && (
+            <button
+              onClick={toggleListening}
+              disabled={disabled}
+              className={`p-2.5 rounded-lg transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center ${
+                isListening
+                  ? "bg-red-600/20 text-red-400 hover:bg-red-600/30 animate-pulse"
+                  : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 disabled:text-zinc-700"
+              }`}
+              title={isListening ? "Stop listening" : "Voice input"}
+            >
+              {isListening ? (
+                <MicOff className="w-4 h-4" />
+              ) : (
+                <Mic className="w-4 h-4" />
+              )}
+            </button>
+          )}
 
           {isLoading ? (
             <button
