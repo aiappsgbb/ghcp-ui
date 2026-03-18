@@ -1,13 +1,16 @@
 import { useRef, useEffect } from "react";
 import { MessageSquare, Sparkles } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
-import type { ChatMessage } from "../types";
+import { ToolProgress } from "./ToolProgress";
+import type { ChatMessage, ToolEvent } from "../types";
 
 interface ChatContainerProps {
   messages: ChatMessage[];
   isLoading: boolean;
   hasSession: boolean;
   onNewSession: () => void;
+  activeTools?: ToolEvent[];
+  streamingContent?: string;
 }
 
 export function ChatContainer({
@@ -15,12 +18,14 @@ export function ChatContainer({
   isLoading,
   hasSession,
   onNewSession,
+  activeTools = [],
+  streamingContent = "",
 }: ChatContainerProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, activeTools, streamingContent]);
 
   if (!hasSession) {
     return (
@@ -52,7 +57,7 @@ export function ChatContainer({
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto">
-        {messages.length === 0 ? (
+        {messages.length === 0 && !isLoading ? (
           <div className="flex items-center justify-center h-full py-20">
             <div className="text-center">
               <div className="w-12 h-12 rounded-xl bg-zinc-900 flex items-center justify-center mx-auto mb-4">
@@ -65,11 +70,35 @@ export function ChatContainer({
           </div>
         ) : (
           messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+            <div key={msg.id}>
+              <MessageBubble message={msg} />
+              {msg.role === "assistant" && msg.toolEvents && msg.toolEvents.length > 0 && (
+                <ToolProgress events={msg.toolEvents} />
+              )}
+            </div>
           ))
         )}
 
-        {isLoading && (
+        {/* Live tool progress while processing */}
+        {isLoading && activeTools.length > 0 && (
+          <ToolProgress events={activeTools} isLive />
+        )}
+
+        {/* Streaming content preview */}
+        {isLoading && streamingContent && (
+          <div className="flex gap-3 px-4 py-4 bg-zinc-900/50">
+            <div className="w-7 h-7 rounded-lg bg-brand-600/20 flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4 text-brand-400" />
+            </div>
+            <div className="prose prose-invert prose-sm max-w-none text-sm text-zinc-300 whitespace-pre-wrap">
+              {streamingContent}
+              <span className="inline-block w-2 h-4 bg-brand-400 animate-pulse ml-0.5" />
+            </div>
+          </div>
+        )}
+
+        {/* Loading indicator (only when no streaming content or tools) */}
+        {isLoading && !streamingContent && activeTools.length === 0 && (
           <div className="flex gap-3 px-4 py-4 bg-zinc-900/50">
             <div className="w-7 h-7 rounded-lg bg-brand-600/20 flex items-center justify-center shrink-0">
               <Sparkles className="w-4 h-4 text-brand-400 animate-pulse" />

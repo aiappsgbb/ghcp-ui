@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import type { ChatMessage, SessionInfo } from "../types";
+import type { ChatMessage, ToolEvent, SessionInfo } from "../types";
 
 const API_BASE = "/api";
 
@@ -10,37 +10,71 @@ export function useChat() {
   const [currentSession, setCurrentSession] = useState<SessionInfo | null>(
     null
   );
+  const [activeTools, setActiveTools] = useState<ToolEvent[]>([]);
+  const [streamingContent, setStreamingContent] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
-  const createSession = useCallback(async (model?: string, mcpServers?: Array<{ name: string; type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>, workspacePath?: string) => {
-    try {
-      setError(null);
-      // Convert array of MCP servers to the Record format the API expects
-      const mcpRecord = mcpServers?.reduce((acc, s) => {
-        acc[s.name] = { type: s.type, url: s.url, headers: s.headers, tools: s.tools };
-        return acc;
-      }, {} as Record<string, { type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>);
+  const createSession = useCallback(
+    async (
+      model?: string,
+      mcpServers?: Array<{
+        name: string;
+        type: "http" | "sse";
+        url: string;
+        headers?: Record<string, string>;
+        tools: string[];
+      }>,
+      workspacePath?: string
+    ) => {
+      try {
+        setError(null);
+        const mcpRecord = mcpServers?.reduce(
+          (acc, s) => {
+            acc[s.name] = {
+              type: s.type,
+              url: s.url,
+              headers: s.headers,
+              tools: s.tools,
+            };
+            return acc;
+          },
+          {} as Record<
+            string,
+            {
+              type: "http" | "sse";
+              url: string;
+              headers?: Record<string, string>;
+              tools: string[];
+            }
+          >
+        );
 
-      const res = await fetch(`${API_BASE}/sessions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          ...(mcpRecord && Object.keys(mcpRecord).length > 0 ? { mcpServers: mcpRecord } : {}),
-          ...(workspacePath ? { workspacePath } : {}),
-        }),
-      });
-      if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
-      const session: SessionInfo = await res.json();
-      setCurrentSession(session);
-      setMessages([]);
-      return session;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to create session";
-      setError(msg);
-      throw err;
-    }
-  }, []);
+        const res = await fetch(`${API_BASE}/sessions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            ...(mcpRecord && Object.keys(mcpRecord).length > 0
+              ? { mcpServers: mcpRecord }
+              : {}),
+            ...(workspacePath ? { workspacePath } : {}),
+          }),
+        });
+        if (!res.ok)
+          throw new Error(`Failed to create session: ${res.status}`);
+        const session: SessionInfo = await res.json();
+        setCurrentSession(session);
+        setMessages([]);
+        return session;
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : "Failed to create session";
+        setError(msg);
+        throw err;
+      }
+    },
+    []
+  );
 
   const loadSessionMessages = useCallback(async (sessionId: string) => {
     try {
@@ -63,6 +97,8 @@ export function useChat() {
 
       setIsLoading(true);
       setError(null);
+      setActiveTools([]);
+      setStreamingContent("");
 
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
@@ -74,16 +110,16 @@ export function useChat() {
 
       abortRef.current = new AbortController();
 
+      const toolEvents: ToolEvent[] = [];
+      let reasoning = "";
+
       try {
-        const res = await fetch(
-          `${API_BASE}/chat/${currentSession.id}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt }),
-            signal: abortRef.current.signal,
-          }
-        );
+        const res = await fetch(`${API_BASE}/chat/${currentSession.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+          signal: abortRef.current.signal,
+        });
 
         if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
 
@@ -99,7 +135,6 @@ export function useChat() {
 
           buffer += decoder.decode(value, { stream: true });
 
-          // Parse SSE events: "event: <type>\ndata: <json>\n\n"
           const events = buffer.split("\n\n");
           buffer = events.pop() ?? "";
 
@@ -128,9 +163,112 @@ export function useChat() {
             }
 
             try {
-              const data = JSON.parse(dataStr) as ChatMessage;
-              if (data.role === "assistant" && data.content) {
-                setMessages((prev) => [...prev, data]);
+              const data = JSON.parse(dataStr);
+
+              switch (eventType) {
+                case "tool_start": {
+                  const evt: ToolEvent = {
+                    type: "start",
+                    toolCallId: data.toolCallId,
+                    toolName: data.mcpToolName ?? data.toolName,
+                    mcpServerName: data.mcpServerName,
+                    timestamp: new Date().toISOString(),
+                  };
+                  toolEvents.push(evt);
+                  setActiveTools([...toolEvents]);
+                  break;
+                }
+
+                case "tool_progress": {
+                  const evt: ToolEvent = {
+                    type: "progress",
+                    toolCallId: data.toolCallId,
+                    message: data.message,
+                    timestamp: new Date().toISOString(),
+                  };
+                  toolEvents.push(evt);
+                  setActiveTools([...toolEvents]);
+                  break;
+                }
+
+                case "tool_complete": {
+                  const evt: ToolEvent = {
+                    type: "complete",
+                    toolCallId: data.toolCallId,
+                    success: data.success,
+                    content: data.content,
+                    timestamp: new Date().toISOString(),
+                  };
+                  toolEvents.push(evt);
+                  setActiveTools([...toolEvents]);
+                  break;
+                }
+
+                case "subagent_start": {
+                  const evt: ToolEvent = {
+                    type: "subagent_start",
+                    toolCallId: data.toolCallId,
+                    agentName: data.name,
+                    timestamp: new Date().toISOString(),
+                  };
+                  toolEvents.push(evt);
+                  setActiveTools([...toolEvents]);
+                  break;
+                }
+
+                case "subagent_end": {
+                  const evt: ToolEvent = {
+                    type: "subagent_end",
+                    toolCallId: data.toolCallId,
+                    agentName: data.name,
+                    success: data.success,
+                    timestamp: new Date().toISOString(),
+                  };
+                  toolEvents.push(evt);
+                  setActiveTools([...toolEvents]);
+                  break;
+                }
+
+                case "intent": {
+                  const evt: ToolEvent = {
+                    type: "progress",
+                    message: `Intent: ${data.intent}`,
+                    timestamp: new Date().toISOString(),
+                  };
+                  toolEvents.push(evt);
+                  setActiveTools([...toolEvents]);
+                  break;
+                }
+
+                case "reasoning_delta": {
+                  reasoning += data.content ?? "";
+                  break;
+                }
+
+                case "message_delta": {
+                  setStreamingContent(
+                    (prev) => prev + (data.content ?? "")
+                  );
+                  break;
+                }
+
+                case "assistant_message": {
+                  const assistantMsg: ChatMessage = {
+                    ...data,
+                    toolEvents:
+                      toolEvents.length > 0 ? [...toolEvents] : undefined,
+                    reasoning: reasoning || undefined,
+                  };
+                  setMessages((prev) => [...prev, assistantMsg]);
+                  setStreamingContent("");
+                  setActiveTools([]);
+                  break;
+                }
+
+                default:
+                  if (data.role === "assistant" && data.content) {
+                    setMessages((prev) => [...prev, data]);
+                  }
               }
             } catch {
               // Skip malformed JSON
@@ -139,10 +277,12 @@ export function useChat() {
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
-        const msg = err instanceof Error ? err.message : "Failed to send message";
+        const msg =
+          err instanceof Error ? err.message : "Failed to send message";
         setError(msg);
       } finally {
         setIsLoading(false);
+        setStreamingContent("");
         abortRef.current = null;
       }
     },
@@ -152,6 +292,8 @@ export function useChat() {
   const stopGeneration = useCallback(() => {
     abortRef.current?.abort();
     setIsLoading(false);
+    setStreamingContent("");
+    setActiveTools([]);
   }, []);
 
   const clearMessages = useCallback(() => {
@@ -163,6 +305,8 @@ export function useChat() {
     isLoading,
     error,
     currentSession,
+    activeTools,
+    streamingContent,
     createSession,
     sendMessage,
     stopGeneration,

@@ -3,6 +3,20 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  toolEvents?: ToolEvent[];
+  reasoning?: string;
+}
+
+export interface ToolEvent {
+  toolCallId?: string;
+  type: "start" | "progress" | "complete" | "subagent_start" | "subagent_end";
+  toolName?: string;
+  mcpServerName?: string;
+  message?: string;
+  success?: boolean;
+  content?: string;
+  agentName?: string;
+  timestamp: string;
 }
 
 export interface SessionInfo {

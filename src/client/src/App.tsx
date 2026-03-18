@@ -22,6 +22,8 @@ export default function App() {
     isLoading,
     error,
     currentSession,
+    activeTools,
+    streamingContent,
     createSession,
     sendMessage,
     stopGeneration,
@@ -110,6 +112,8 @@ export default function App() {
             isLoading={isLoading}
             hasSession={currentSession !== null}
             onNewSession={handleNewChatClick}
+            activeTools={activeTools}
+            streamingContent={streamingContent}
           />
 
           <InputBar

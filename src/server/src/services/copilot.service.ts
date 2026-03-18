@@ -1,4 +1,4 @@
-import { CopilotClient, approveAll, type CopilotSession, type MCPServerConfig } from "@github/copilot-sdk";
+import { CopilotClient, approveAll, type CopilotSession, type MCPServerConfig, type SessionEventHandler } from "@github/copilot-sdk";
 import { v4 as uuidv4 } from "uuid";
 import type { AppConfig } from "../config.js";
 
@@ -169,9 +169,127 @@ export class CopilotService {
 
     yield { type: "user_message", data: JSON.stringify(userMsg) };
 
-    // Use sendAndWait which reliably returns content
-    const response = await managed.session.sendAndWait({ prompt });
-    const fullContent = response?.data?.content ?? "";
+    // Collect events via a queue so we can yield them as SSE
+    const eventQueue: Array<{ type: string; data: string }> = [];
+    let resolveWait: (() => void) | null = null;
+    let isDone = false;
+    let fullContent = "";
+    const deltaChunks: string[] = [];
+
+    const push = (evt: { type: string; data: string }) => {
+      eventQueue.push(evt);
+      resolveWait?.();
+    };
+
+    // Subscribe to all events via catch-all handler
+    const handler = (event: { type: string; data?: Record<string, unknown> }) => {
+      const t = event.type;
+      const d = event.data ?? {};
+
+      if (t === "tool.execution_start") {
+        push({
+          type: "tool_start",
+          data: JSON.stringify({
+            toolCallId: d.toolCallId,
+            toolName: d.toolName,
+            mcpServerName: d.mcpServerName,
+            mcpToolName: d.mcpToolName,
+          }),
+        });
+      } else if (t === "tool.execution_progress") {
+        push({
+          type: "tool_progress",
+          data: JSON.stringify({
+            toolCallId: d.toolCallId,
+            message: d.progressMessage,
+          }),
+        });
+      } else if (t === "tool.execution_complete") {
+        const result = d.result as Record<string, unknown> | undefined;
+        push({
+          type: "tool_complete",
+          data: JSON.stringify({
+            toolCallId: d.toolCallId,
+            success: d.success,
+            content: typeof result?.content === "string"
+              ? result.content.slice(0, 500)
+              : undefined,
+          }),
+        });
+      } else if (t === "assistant.intent") {
+        push({
+          type: "intent",
+          data: JSON.stringify({ intent: d.intent }),
+        });
+      } else if (t === "assistant.reasoning_delta") {
+        push({
+          type: "reasoning_delta",
+          data: JSON.stringify({ content: d.deltaContent }),
+        });
+      } else if (t === "assistant.message_delta") {
+        const delta = (d.deltaContent as string) ?? "";
+        if (delta) {
+          deltaChunks.push(delta);
+          push({
+            type: "message_delta",
+            data: JSON.stringify({ content: delta }),
+          });
+        }
+      } else if (t === "assistant.message") {
+        fullContent = (d.content as string) ?? deltaChunks.join("");
+      } else if (t === "subagent.started") {
+        push({
+          type: "subagent_start",
+          data: JSON.stringify({
+            toolCallId: d.toolCallId,
+            name: d.agentDisplayName ?? d.agentName,
+          }),
+        });
+      } else if (t === "subagent.completed" || t === "subagent.failed") {
+        push({
+          type: "subagent_end",
+          data: JSON.stringify({
+            toolCallId: d.toolCallId,
+            name: d.agentDisplayName ?? d.agentName,
+            success: t === "subagent.completed",
+          }),
+        });
+      } else if (t === "session.idle") {
+        if (!fullContent && deltaChunks.length > 0) {
+          fullContent = deltaChunks.join("");
+        }
+        isDone = true;
+        resolveWait?.();
+      }
+    };
+
+    managed.session.on(handler as SessionEventHandler);
+
+    // Send the prompt (non-blocking)
+    await managed.session.send({ prompt });
+
+    // Yield events as they arrive
+    const timeout = setTimeout(() => {
+      isDone = true;
+      resolveWait?.();
+    }, 120_000);
+
+    try {
+      while (!isDone || eventQueue.length > 0) {
+        if (eventQueue.length === 0 && !isDone) {
+          await new Promise<void>((resolve) => {
+            resolveWait = resolve;
+          });
+          resolveWait = null;
+        }
+
+        while (eventQueue.length > 0) {
+          yield eventQueue.shift()!;
+        }
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const assistantMsg: ChatMessage = {
       id: uuidv4(),
