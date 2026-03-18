@@ -19,6 +19,17 @@ resource cognitiveServicesRole 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
+// Reader role for ARM deployment listing (models endpoint)
+resource readerRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(openAi.id, userAssignedIdentityPrincipalId, 'Reader')
+  scope: openAi
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')
+    principalId: userAssignedIdentityPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 output openAiEndpoint string = openAi.properties.endpoint
 #disable-next-line outputs-should-not-contain-secrets
 output openAiKey string = openAi.listKeys().key1

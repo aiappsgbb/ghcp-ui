@@ -12,6 +12,9 @@ export interface AppConfig {
     storageConnectionString: string;
     storageAccountName: string;
     storageContainerName: string;
+    openAiResourceName: string;
+    openAiResourceGroup: string;
+    subscriptionId: string;
   };
 
   copilot: {
@@ -72,6 +75,9 @@ export function loadConfig(): AppConfig {
       storageConnectionString: process.env.AZURE_STORAGE_CONNECTION_STRING ?? "",
       storageAccountName: process.env.AZURE_STORAGE_ACCOUNT_NAME ?? "",
       storageContainerName: process.env.AZURE_STORAGE_CONTAINER_NAME ?? "workspaces",
+      openAiResourceName: process.env.AZURE_OPENAI_NAME ?? "",
+      openAiResourceGroup: process.env.AZURE_OPENAI_RG ?? "",
+      subscriptionId: process.env.AZURE_SUBSCRIPTION_ID ?? "",
     },
     copilot: {
       githubToken,

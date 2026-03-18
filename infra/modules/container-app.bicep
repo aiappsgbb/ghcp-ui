@@ -8,6 +8,9 @@ param managedIdentityId string
 param managedIdentityClientId string
 param openAiEndpoint string
 param openAiModelName string
+param openAiResourceName string
+param openAiResourceGroup string
+param subscriptionId string
 param keyVaultName string
 param storageAccountName string
 
@@ -76,6 +79,9 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_FOUNDRY_MODEL', value: openAiModelName }
             { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
             { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storageAccountName }
+            { name: 'AZURE_OPENAI_NAME', value: openAiResourceName }
+            { name: 'AZURE_OPENAI_RG', value: openAiResourceGroup }
+            { name: 'AZURE_SUBSCRIPTION_ID', value: subscriptionId }
             { name: 'WORKSPACE_MOUNT_PATH', value: '/data/workspaces' }
             {
               name: 'AZURE_FOUNDRY_API_KEY'

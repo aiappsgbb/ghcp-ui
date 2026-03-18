@@ -15,7 +15,7 @@
       "value": "${AZURE_OPENAI_RG}"
     },
     "aiModelName": {
-      "value": "${AZURE_OPENAI_MODEL_NAME=gpt-4.1}"
+      "value": "${AZURE_OPENAI_MODEL_NAME=gpt-5.4}"
     },
     "containerImageName": {
       "value": "${SERVICE_WEB_IMAGE_NAME=}"

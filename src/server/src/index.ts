@@ -61,33 +61,67 @@ async function main() {
     res.json({ servers });
   });
 
-  // Models endpoint — list deployed models from Azure OpenAI
+  // Models endpoint — list deployed models from Azure OpenAI via ARM API
   app.get("/api/models", async (_req, res) => {
+    const fallback = { models: [{ id: config.azure.foundryModel, label: config.azure.foundryModel }], default: config.azure.foundryModel };
     try {
-      const endpoint = config.azure.foundryEndpoint.replace(/\/openai\/v1\/?$/, "");
-      const apiKey = config.azure.foundryApiKey;
-      if (!endpoint || !apiKey) {
-        res.json({ models: [{ id: config.azure.foundryModel, label: config.azure.foundryModel }], default: config.azure.foundryModel });
+      const { openAiResourceName, openAiResourceGroup, subscriptionId } = config.azure;
+      if (!openAiResourceName || !openAiResourceGroup || !subscriptionId) {
+        console.warn("[Models] Missing Azure OpenAI resource config — returning fallback");
+        res.json(fallback);
         return;
       }
-      const resp = await fetch(`${endpoint}/openai/deployments?api-version=2024-10-01`, {
-        headers: { "api-key": apiKey },
+
+      // Get ARM token via managed identity (works in ACA)
+      const identityEndpoint = process.env.IDENTITY_ENDPOINT;
+      const identityHeader = process.env.IDENTITY_HEADER;
+      let armToken: string | undefined;
+
+      if (identityEndpoint && identityHeader) {
+        const tokenResp = await fetch(
+          `${identityEndpoint}?api-version=2019-08-01&resource=https://management.azure.com`,
+          { headers: { "X-IDENTITY-HEADER": identityHeader } }
+        );
+        if (tokenResp.ok) {
+          const tokenData = await tokenResp.json() as { access_token: string };
+          armToken = tokenData.access_token;
+        }
+      }
+
+      if (!armToken) {
+        // Fallback: try Azure CLI token (dev environment)
+        try {
+          const { execSync } = await import("node:child_process");
+          armToken = execSync("az account get-access-token --resource https://management.azure.com --query accessToken -o tsv", { encoding: "utf-8" }).trim();
+        } catch {
+          console.warn("[Models] No managed identity or Azure CLI — returning fallback");
+          res.json(fallback);
+          return;
+        }
+      }
+
+      const armUrl = `https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${openAiResourceGroup}/providers/Microsoft.CognitiveServices/accounts/${openAiResourceName}/deployments?api-version=2024-10-01`;
+      const resp = await fetch(armUrl, {
+        headers: { Authorization: `Bearer ${armToken}` },
       });
       if (!resp.ok) {
-        console.warn(`[Models] Failed to list deployments: ${resp.status}`);
-        res.json({ models: [{ id: config.azure.foundryModel, label: config.azure.foundryModel }], default: config.azure.foundryModel });
+        console.warn(`[Models] ARM deployments list failed: ${resp.status}`);
+        res.json(fallback);
         return;
       }
-      const data = await resp.json() as { data?: Array<{ id: string; model: string; status: string }> };
-      const chatModels = (data.data ?? [])
-        .filter((d) => d.status === "succeeded")
-        .filter((d) => !d.model.includes("embedding") && !d.model.includes("whisper") && !d.model.includes("dall"))
-        .map((d) => ({ id: d.id, label: d.model }))
+      const data = await resp.json() as { value?: Array<{ name: string; properties: { model: { name: string }; provisioningState: string } }> };
+      const chatModels = (data.value ?? [])
+        .filter((d) => d.properties.provisioningState === "Succeeded")
+        .filter((d) => {
+          const m = d.properties.model.name.toLowerCase();
+          return !m.includes("embedding") && !m.includes("whisper") && !m.includes("dall") && !m.includes("tts") && !m.includes("rerank");
+        })
+        .map((d) => ({ id: d.name, label: d.properties.model.name }))
         .sort((a, b) => a.label.localeCompare(b.label));
-      res.json({ models: chatModels, default: config.azure.foundryModel });
+      res.json({ models: chatModels.length > 0 ? chatModels : fallback.models, default: config.azure.foundryModel });
     } catch (err) {
       console.warn("[Models] Error listing models:", err);
-      res.json({ models: [{ id: config.azure.foundryModel, label: config.azure.foundryModel }], default: config.azure.foundryModel });
+      res.json(fallback);
     }
   });
 
