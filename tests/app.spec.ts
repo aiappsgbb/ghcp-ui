@@ -318,3 +318,66 @@ test.describe("Session Persistence", () => {
     await request.delete(`/api/sessions/${created.id}`);
   });
 });
+
+test.describe("User MCP Config", () => {
+  test("user identity endpoint returns userId", async ({ request }) => {
+    const res = await request.get("/api/me");
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data.userId).toBeTruthy();
+    expect(data.userName).toBeTruthy();
+  });
+
+  test("user MCP CRUD: add, list, remove", async ({ request }) => {
+    // List — should be empty or whatever baseline
+    const before = await request.get("/api/mcp-servers/user");
+    const beforeData = await before.json();
+    const startCount = beforeData.servers.length;
+
+    // PUT a server
+    const putRes = await request.put("/api/mcp-servers/user", {
+      data: {
+        servers: {
+          ...beforeData.servers.reduce((acc: Record<string, unknown>, s: { name: string }) => {
+            acc[s.name] = s;
+            return acc;
+          }, {}),
+          "test-server": {
+            type: "http",
+            url: "https://test.example.com/mcp",
+            headers: { "X-API-KEY": "secret123" },
+            tools: ["*"],
+          },
+        },
+      },
+    });
+    expect(putRes.ok()).toBeTruthy();
+
+    // List — should have one more
+    const after = await request.get("/api/mcp-servers/user");
+    const afterData = await after.json();
+    expect(afterData.servers.length).toBe(startCount + 1);
+    const testServer = afterData.servers.find((s: { name: string }) => s.name === "test-server");
+    expect(testServer).toBeTruthy();
+    // Headers should be masked
+    expect(testServer.headers?.["X-API-KEY"]).toMatch(/^secr\*\*\*$/);
+
+    // DELETE
+    const delRes = await request.delete("/api/mcp-servers/user/test-server");
+    expect(delRes.ok()).toBeTruthy();
+
+    // List — back to start
+    const final = await request.get("/api/mcp-servers/user");
+    const finalData = await final.json();
+    expect(finalData.servers.length).toBe(startCount);
+  });
+
+  test("settings drawer shows Your Servers section", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForTimeout(1000);
+    // Open settings
+    await page.getByLabel("Settings").click();
+    await expect(page.getByText("Your Servers")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Add MCP Server")).toBeVisible();
+  });
+});

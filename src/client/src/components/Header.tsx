@@ -1,4 +1,4 @@
-import { MessageSquare, Github, Menu, Settings, FolderOpen } from "lucide-react";
+import { MessageSquare, Github, Menu, Settings, FolderOpen, LogOut, User } from "lucide-react";
 
 interface HeaderProps {
   sessionModel: string | null;
@@ -6,9 +6,10 @@ interface HeaderProps {
   onToggleSidebar: () => void;
   onOpenSettings: () => void;
   onOpenWorkspace: () => void;
+  userName?: string;
 }
 
-export function Header({ sessionModel, isConnected, onToggleSidebar, onOpenSettings, onOpenWorkspace }: HeaderProps) {
+export function Header({ sessionModel, isConnected, onToggleSidebar, onOpenSettings, onOpenWorkspace, userName }: HeaderProps) {
   return (
     <header className="flex items-center justify-between px-3 sm:px-6 py-3 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm safe-top">
       <div className="flex items-center gap-2 sm:gap-3">
@@ -49,6 +50,14 @@ export function Header({ sessionModel, isConnected, onToggleSidebar, onOpenSetti
             {isConnected ? "Connected" : "Disconnected"}
           </span>
         </div>
+
+        {userName && userName !== "Anonymous" && (
+          <div className="flex items-center gap-1.5 text-xs text-zinc-400 hidden sm:flex">
+            <User className="w-3.5 h-3.5" />
+            <span className="max-w-[120px] truncate">{userName}</span>
+          </div>
+        )}
+
         <button
           onClick={onOpenWorkspace}
           className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
@@ -63,14 +72,24 @@ export function Header({ sessionModel, isConnected, onToggleSidebar, onOpenSetti
         >
           <Settings className="w-5 h-5" />
         </button>
-        <a
-          href="https://github.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
-        >
-          <Github className="w-5 h-5" />
-        </a>
+        {userName && userName !== "Anonymous" ? (
+          <a
+            href="/.auth/logout"
+            className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
+            title="Sign out"
+          >
+            <LogOut className="w-5 h-5" />
+          </a>
+        ) : (
+          <a
+            href="https://github.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
+          >
+            <Github className="w-5 h-5" />
+          </a>
+        )}
       </div>
     </header>
   );

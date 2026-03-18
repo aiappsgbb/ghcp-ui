@@ -7,10 +7,12 @@ import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
 import { CopilotService } from "./services/copilot.service.js";
 import { WorkspaceService } from "./services/workspace.service.js";
+import { UserMcpService } from "./services/user-mcp.service.js";
 import { createChatRoutes } from "./routes/chat.routes.js";
 import { createSessionRoutes } from "./routes/sessions.routes.js";
 import { createWorkspaceRoutes } from "./routes/workspace.routes.js";
 import healthRoutes from "./routes/health.routes.js";
+import { easyAuthMiddleware } from "./middleware/auth.middleware.js";
 import {
   errorHandler,
   notFoundHandler,
@@ -38,20 +40,26 @@ async function main() {
   );
   app.use(morgan(config.isProduction ? "combined" : "dev"));
   app.use(express.json({ limit: "1mb" }));
+  app.use(easyAuthMiddleware);
 
-  // Health routes (no auth)
+  // Health routes (no auth needed — already behind EasyAuth)
   app.use("/api", healthRoutes);
 
   // Initialize services (non-blocking — server listens immediately)
   const copilot = new CopilotService(config);
   const workspace = new WorkspaceService(config);
+  const basePath = config.workspaceMountPath || "/tmp/ghcp-sessions";
+  const userMcp = new UserMcpService(basePath);
+
+  // Wire user MCP loader into copilot service
+  copilot.setUserMcpLoader((userId) => userMcp.getUserServers(userId));
 
   // API routes (registered before init completes — routes guard on client readiness)
   app.use("/api/sessions", createSessionRoutes(copilot, workspace));
   app.use("/api/chat", createChatRoutes(copilot));
   app.use("/api/workspace", createWorkspaceRoutes(workspace));
 
-  // Global MCP servers endpoint (returns names only — no secrets)
+  // Global MCP servers endpoint (admin-configured, read-only, no secrets)
   app.get("/api/mcp-servers", (_req, res) => {
     const servers = Object.entries(config.mcpServers).map(([name, srv]) => ({
       name,
@@ -59,6 +67,48 @@ async function main() {
       url: "url" in srv ? srv.url : undefined,
     }));
     res.json({ servers });
+  });
+
+  // User MCP servers endpoints (per-user persistent config)
+  app.get("/api/mcp-servers/user", (req, res) => {
+    const servers = userMcp.getUserServers(req.userId);
+    // Return server list with urls but mask sensitive headers
+    const safe = Object.entries(servers).map(([name, srv]) => ({
+      name,
+      type: "type" in srv ? srv.type : "local",
+      url: "url" in srv ? srv.url : undefined,
+      headers: "headers" in srv && srv.headers
+        ? Object.fromEntries(
+            Object.entries(srv.headers as Record<string, string>).map(([k, v]) => [k, v.substring(0, 4) + "***"])
+          )
+        : undefined,
+      tools: "tools" in srv ? srv.tools : undefined,
+    }));
+    res.json({ servers: safe });
+  });
+
+  app.put("/api/mcp-servers/user", (req, res) => {
+    const { servers } = req.body as { servers?: Record<string, unknown> };
+    if (!servers || typeof servers !== "object") {
+      res.status(400).json({ error: { message: "servers object required" } });
+      return;
+    }
+    userMcp.setUserServers(req.userId, servers as Record<string, import("@github/copilot-sdk").MCPServerConfig>);
+    res.json({ ok: true, count: Object.keys(servers).length });
+  });
+
+  app.delete("/api/mcp-servers/user/:name", (req, res) => {
+    const removed = userMcp.removeUserServer(req.userId, req.params.name);
+    if (removed) {
+      res.json({ ok: true });
+    } else {
+      res.status(404).json({ error: { message: `Server "${req.params.name}" not found` } });
+    }
+  });
+
+  // User identity endpoint (for frontend header)
+  app.get("/api/me", (req, res) => {
+    res.json({ userId: req.userId, userName: req.userName });
   });
 
   // Models endpoint — list deployed models from Azure OpenAI via ARM API

@@ -7,7 +7,7 @@ import {
   type SessionMetadata,
 } from "@github/copilot-sdk";
 import { v4 as uuidv4 } from "uuid";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import type { AppConfig } from "../config.js";
 
@@ -34,12 +34,14 @@ interface SessionMeta {
   model: string;
   title?: string;
   createdAt: string;
+  userId: string;
 }
 
 interface ManagedSession {
   session: CopilotSession;
   model: string;
   createdAt: Date;
+  userId: string;
 }
 
 export class CopilotService {
@@ -48,6 +50,7 @@ export class CopilotService {
   private sessions = new Map<string, ManagedSession>();
   private config: AppConfig;
   private _ready = false;
+  private userMcpLoader?: (userId: string) => Record<string, MCPServerConfig>;
 
   constructor(config: AppConfig) {
     this.config = config;
@@ -57,32 +60,37 @@ export class CopilotService {
     return this._ready && this.client !== null;
   }
 
-  /** Directory where the CLI persists session state */
-  private get configDir(): string {
+  /** Register a callback to load per-user MCP servers */
+  setUserMcpLoader(loader: (userId: string) => Record<string, MCPServerConfig>): void {
+    this.userMcpLoader = loader;
+  }
+
+  /** Per-user directory where the CLI persists session state */
+  private userConfigDir(userId: string): string {
     const base = this.config.workspaceMountPath || "/tmp/ghcp-sessions";
-    const dir = join(base, ".copilot");
+    const dir = join(base, userId, ".copilot");
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     return dir;
   }
 
   /** Path to the sidecar metadata file for a session */
-  private metaPath(sessionId: string): string {
-    const dir = join(this.configDir, "session-meta");
+  private metaPath(userId: string, sessionId: string): string {
+    const dir = join(this.userConfigDir(userId), "session-meta");
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     return join(dir, `${sessionId}.json`);
   }
 
-  private writeMeta(sessionId: string, meta: SessionMeta): void {
+  private writeMeta(userId: string, sessionId: string, meta: SessionMeta): void {
     try {
-      writeFileSync(this.metaPath(sessionId), JSON.stringify(meta));
+      writeFileSync(this.metaPath(userId, sessionId), JSON.stringify(meta));
     } catch (err) {
       console.warn(`[CopilotService] Failed to write session meta for ${sessionId}:`, err);
     }
   }
 
-  private readMeta(sessionId: string): SessionMeta | null {
+  private readMeta(userId: string, sessionId: string): SessionMeta | null {
     try {
-      const raw = readFileSync(this.metaPath(sessionId), "utf-8");
+      const raw = readFileSync(this.metaPath(userId, sessionId), "utf-8");
       return JSON.parse(raw) as SessionMeta;
     } catch {
       return null;
@@ -105,7 +113,7 @@ export class CopilotService {
       await this.client.start();
       this._ready = true;
       console.log("[CopilotService] Client started successfully");
-      console.log(`[CopilotService] configDir: ${this.configDir}`);
+      console.log(`[CopilotService] basePath: ${this.config.workspaceMountPath || "/tmp/ghcp-sessions"}`);
     } catch (err) {
       console.warn("[CopilotService] Failed to start Copilot CLI — chat unavailable");
       console.warn("[CopilotService]", (err as Error).message ?? err);
@@ -143,13 +151,22 @@ export class CopilotService {
     };
   }
 
-  /** Build merged MCP servers from global + workspace + per-session */
+  /** Build merged MCP servers: global (admin) → user (persistent) → per-session (ephemeral) */
   private buildMcpServers(
+    userId: string,
     workingDirectory?: string,
     extra?: Record<string, { type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>
   ): Record<string, MCPServerConfig> | undefined {
+    // Layer 1: Global admin servers
     const merged: Record<string, MCPServerConfig> = { ...this.config.mcpServers };
 
+    // Layer 2: Per-user persistent servers
+    if (this.userMcpLoader) {
+      const userServers = this.userMcpLoader(userId);
+      Object.assign(merged, userServers);
+    }
+
+    // Layer 3: Workspace filesystem
     if (workingDirectory) {
       merged.workspace = {
         type: "local" as const,
@@ -159,12 +176,14 @@ export class CopilotService {
       };
     }
 
+    // Layer 4: Per-session ephemeral
     if (extra) Object.assign(merged, extra);
 
     return Object.keys(merged).length > 0 ? merged : undefined;
   }
 
   async createSession(
+    userId: string,
     model?: string,
     workingDirectory?: string,
     mcpServers?: Record<string, { type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>
@@ -177,16 +196,16 @@ export class CopilotService {
     const session = await this.client.createSession({
       sessionId,
       model: selectedModel,
-      configDir: this.configDir,
+      configDir: this.userConfigDir(userId),
       onPermissionRequest: approveAll,
       workingDirectory,
-      mcpServers: this.buildMcpServers(workingDirectory, mcpServers),
+      mcpServers: this.buildMcpServers(userId, workingDirectory, mcpServers),
       provider: this.providerConfig,
     });
 
     const now = new Date();
-    this.sessions.set(sessionId, { session, model: selectedModel, createdAt: now });
-    this.writeMeta(sessionId, { model: selectedModel, createdAt: now.toISOString() });
+    this.sessions.set(sessionId, { session, model: selectedModel, createdAt: now, userId });
+    this.writeMeta(userId, sessionId, { model: selectedModel, createdAt: now.toISOString(), userId });
 
     return {
       id: sessionId,
@@ -197,7 +216,7 @@ export class CopilotService {
     };
   }
 
-  async resumeSession(sessionId: string): Promise<SessionInfo> {
+  async resumeSession(userId: string, sessionId: string): Promise<SessionInfo> {
     if (!this.client) throw new Error("CopilotService not initialized");
 
     // Already active?
@@ -212,19 +231,19 @@ export class CopilotService {
       };
     }
 
-    const meta = this.readMeta(sessionId);
+    const meta = this.readMeta(userId, sessionId);
     const model = meta?.model ?? this.config.azure.foundryModel;
 
     const session = await this.client.resumeSession(sessionId, {
-      configDir: this.configDir,
+      configDir: this.userConfigDir(userId),
       onPermissionRequest: approveAll,
-      mcpServers: this.buildMcpServers(),
+      mcpServers: this.buildMcpServers(userId),
       provider: this.providerConfig,
       model,
     });
 
     const createdAt = meta?.createdAt ? new Date(meta.createdAt) : new Date();
-    this.sessions.set(sessionId, { session, model, createdAt });
+    this.sessions.set(sessionId, { session, model, createdAt, userId });
 
     return {
       id: sessionId,
@@ -236,8 +255,8 @@ export class CopilotService {
     };
   }
 
-  /** List all sessions: active in-memory + persisted on disk (merged, deduped) */
-  async listSessions(): Promise<SessionInfo[]> {
+  /** List sessions for a specific user: active in-memory + persisted on disk (merged, deduped) */
+  async listSessions(userId: string): Promise<SessionInfo[]> {
     if (!this.client) return [];
 
     let persisted: SessionMetadata[] = [];
@@ -250,11 +269,14 @@ export class CopilotService {
     const seen = new Set<string>();
     const results: SessionInfo[] = [];
 
-    // Start with persisted sessions from SDK
+    // Start with persisted sessions from SDK — filter to this user
     for (const s of persisted) {
+      const meta = this.readMeta(userId, s.sessionId);
+      // Only include sessions belonging to this user (or with no userId = legacy)
+      if (meta && meta.userId && meta.userId !== userId) continue;
+
       seen.add(s.sessionId);
       const isActive = this.sessions.has(s.sessionId);
-      const meta = this.readMeta(s.sessionId);
       results.push({
         id: s.sessionId,
         createdAt: s.startTime?.toISOString?.() ?? meta?.createdAt ?? new Date().toISOString(),
@@ -267,19 +289,19 @@ export class CopilotService {
       });
     }
 
-    // Add active in-memory sessions not yet persisted to disk
+    // Add active in-memory sessions for this user not yet persisted to disk
     for (const [id, managed] of this.sessions) {
-      if (!seen.has(id)) {
-        const meta = this.readMeta(id);
-        results.push({
-          id,
-          createdAt: managed.createdAt.toISOString(),
-          model: managed.model,
-          title: meta?.title,
-          messageCount: 0,
-          active: true,
-        });
-      }
+      if (managed.userId !== userId) continue;
+      if (seen.has(id)) continue;
+      const meta = this.readMeta(userId, id);
+      results.push({
+        id,
+        createdAt: managed.createdAt.toISOString(),
+        model: managed.model,
+        title: meta?.title,
+        messageCount: 0,
+        active: true,
+      });
     }
 
     return results;
@@ -321,11 +343,11 @@ export class CopilotService {
   }
 
   /** Rename a session */
-  updateSessionTitle(sessionId: string, title: string): void {
-    const meta = this.readMeta(sessionId);
+  updateSessionTitle(userId: string, sessionId: string, title: string): void {
+    const meta = this.readMeta(userId, sessionId);
     if (meta) {
       meta.title = title;
-      this.writeMeta(sessionId, meta);
+      this.writeMeta(userId, sessionId, meta);
     }
   }
 
@@ -495,7 +517,7 @@ export class CopilotService {
   }
 
   /** Delete a session permanently (removes from disk) */
-  async deleteSession(sessionId: string): Promise<void> {
+  async deleteSession(userId: string, sessionId: string): Promise<void> {
     const managed = this.sessions.get(sessionId);
     if (managed) {
       try {
@@ -516,8 +538,7 @@ export class CopilotService {
 
     // Clean up sidecar
     try {
-      const { unlinkSync } = await import("fs");
-      unlinkSync(this.metaPath(sessionId));
+      unlinkSync(this.metaPath(userId, sessionId));
     } catch {
       // Sidecar may not exist
     }

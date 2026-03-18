@@ -5,14 +5,14 @@ import type { WorkspaceService } from "../services/workspace.service.js";
 export function createSessionRoutes(copilot: CopilotService, workspace: WorkspaceService): Router {
   const router = Router();
 
-  // GET /api/sessions — list all sessions (active + persisted)
-  router.get("/", async (_req: Request, res: Response) => {
+  // GET /api/sessions — list all sessions for the current user
+  router.get("/", async (req: Request, res: Response) => {
     if (!copilot.isReady) {
       res.json({ sessions: [], ready: false });
       return;
     }
     try {
-      const sessions = await copilot.listSessions();
+      const sessions = await copilot.listSessions(req.userId);
       res.json({ sessions, ready: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -33,13 +33,12 @@ export function createSessionRoutes(copilot: CopilotService, workspace: Workspac
       mcpServers?: Record<string, { type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>;
     };
 
-    const userId = "default";
     const resolvedPath = workspacePath
-      ? workspace.getFolderPath(userId, workspacePath)
-      : workspace.getWorkspacePath(userId);
+      ? workspace.getFolderPath(req.userId, workspacePath)
+      : workspace.getWorkspacePath(req.userId);
 
     try {
-      const session = await copilot.createSession(model, resolvedPath, mcpServers);
+      const session = await copilot.createSession(req.userId, model, resolvedPath, mcpServers);
       res.status(201).json(session);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -55,7 +54,7 @@ export function createSessionRoutes(copilot: CopilotService, workspace: Workspac
     }
 
     try {
-      const session = await copilot.resumeSession(req.params.id as string);
+      const session = await copilot.resumeSession(req.userId, req.params.id as string);
       res.json(session);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -82,7 +81,7 @@ export function createSessionRoutes(copilot: CopilotService, workspace: Workspac
       return;
     }
     try {
-      copilot.updateSessionTitle(req.params.id as string, title);
+      copilot.updateSessionTitle(req.userId, req.params.id as string, title);
       res.json({ ok: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -93,7 +92,7 @@ export function createSessionRoutes(copilot: CopilotService, workspace: Workspac
   // DELETE /api/sessions/:id — permanently delete session
   router.delete("/:id", async (req: Request, res: Response) => {
     try {
-      await copilot.deleteSession(req.params.id as string);
+      await copilot.deleteSession(req.userId, req.params.id as string);
       res.status(204).send();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";

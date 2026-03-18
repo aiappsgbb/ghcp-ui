@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { X, Server, Plus, Trash2, Globe, Shield } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { X, Server, Plus, Trash2, Globe, Shield, Save, Loader2 } from "lucide-react";
 
 export interface McpServerEntry {
   name: string;
@@ -15,6 +15,14 @@ interface GlobalMcpServer {
   url?: string;
 }
 
+interface UserMcpServer {
+  name: string;
+  type: string;
+  url?: string;
+  headers?: Record<string, string>;
+  tools?: string[];
+}
+
 interface SettingsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -27,43 +35,79 @@ interface SettingsDrawerProps {
 export function SettingsDrawer({
   isOpen,
   onClose,
-  mcpServers,
-  onUpdateMcpServers,
   currentModel,
   workspacePath,
 }: SettingsDrawerProps) {
   const [newServerName, setNewServerName] = useState("");
   const [newServerUrl, setNewServerUrl] = useState("");
+  const [newServerHeaderKey, setNewServerHeaderKey] = useState("");
+  const [newServerHeaderVal, setNewServerHeaderVal] = useState("");
   const [globalServers, setGlobalServers] = useState<GlobalMcpServer[]>([]);
+  const [userServers, setUserServers] = useState<UserMcpServer[]>([]);
+  const [saving, setSaving] = useState(false);
 
-  // Fetch global MCP servers from backend
-  useEffect(() => {
+  const fetchServers = useCallback(() => {
     if (!isOpen) return;
     fetch("/api/mcp-servers")
       .then((r) => r.json())
       .then((data) => setGlobalServers(data.servers ?? []))
       .catch(() => {});
+    fetch("/api/mcp-servers/user")
+      .then((r) => r.json())
+      .then((data) => setUserServers(data.servers ?? []))
+      .catch(() => {});
   }, [isOpen]);
+
+  useEffect(() => { fetchServers(); }, [fetchServers]);
 
   if (!isOpen) return null;
 
-  const handleAddServer = () => {
+  const handleAddServer = async () => {
     if (!newServerName.trim() || !newServerUrl.trim()) return;
-    onUpdateMcpServers([
-      ...mcpServers,
-      {
-        name: newServerName.trim(),
-        type: "http",
-        url: newServerUrl.trim(),
-        tools: ["*"],
-      },
-    ]);
-    setNewServerName("");
-    setNewServerUrl("");
+    setSaving(true);
+
+    const headers: Record<string, string> = {};
+    if (newServerHeaderKey.trim() && newServerHeaderVal.trim()) {
+      headers[newServerHeaderKey.trim()] = newServerHeaderVal.trim();
+    }
+
+    // Build the full server config to save
+    const currentServers = userServers.reduce<Record<string, unknown>>((acc, s) => {
+      acc[s.name] = { type: s.type || "http", url: s.url, headers: s.headers, tools: s.tools || ["*"] };
+      return acc;
+    }, {});
+
+    currentServers[newServerName.trim()] = {
+      type: "http",
+      url: newServerUrl.trim(),
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      tools: ["*"],
+    };
+
+    try {
+      await fetch("/api/mcp-servers/user", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ servers: currentServers }),
+      });
+      setNewServerName("");
+      setNewServerUrl("");
+      setNewServerHeaderKey("");
+      setNewServerHeaderVal("");
+      fetchServers();
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleRemoveServer = (index: number) => {
-    onUpdateMcpServers(mcpServers.filter((_, i) => i !== index));
+  const handleRemoveServer = async (name: string) => {
+    setSaving(true);
+    try {
+      await fetch(`/api/mcp-servers/user/${encodeURIComponent(name)}`, { method: "DELETE" });
+      fetchServers();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -108,12 +152,12 @@ export function SettingsDrawer({
               MCP Servers
             </h3>
 
-            {/* Global servers (from env config) */}
+            {/* Global servers (admin) */}
             {globalServers.length > 0 && (
               <div className="mb-4">
                 <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2 flex items-center gap-1">
                   <Shield className="w-3 h-3" />
-                  Global (configured by admin)
+                  Admin (read-only)
                 </p>
                 <div className="space-y-2">
                   {globalServers.map((server) => (
@@ -134,28 +178,32 @@ export function SettingsDrawer({
               </div>
             )}
 
-            {/* Per-session servers (user-added) */}
-            <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">
-              Per-session (added by you)
+            {/* User servers (persistent per-user) */}
+            <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+              <Save className="w-3 h-3" />
+              Your Servers (persisted)
             </p>
             <p className="text-xs text-zinc-600 mb-3">
-              Add remote MCP servers for the current session.
+              These MCP servers are saved to your profile and used in all your sessions.
             </p>
 
-            {mcpServers.length > 0 && (
+            {userServers.length > 0 && (
               <div className="space-y-2 mb-4">
-                {mcpServers.map((server, i) => (
+                {userServers.map((server) => (
                   <div
-                    key={i}
+                    key={server.name}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800"
                   >
-                    <Globe className="w-4 h-4 text-brand-400 shrink-0" />
+                    <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-zinc-200 truncate">{server.name}</p>
-                      <p className="text-[10px] text-zinc-600 truncate">{server.url}</p>
+                      <p className="text-[10px] text-zinc-600 truncate">
+                        {server.type}{server.url ? ` • ${server.url}` : ""}
+                      </p>
                     </div>
                     <button
-                      onClick={() => handleRemoveServer(i)}
+                      onClick={() => handleRemoveServer(server.name)}
+                      disabled={saving}
                       className="p-1.5 rounded hover:bg-zinc-700 text-zinc-600 hover:text-red-400 min-w-[32px] min-h-[32px] flex items-center justify-center"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -168,24 +216,40 @@ export function SettingsDrawer({
             <div className="space-y-2">
               <input
                 type="text"
-                placeholder="Server name"
+                placeholder="Server name (e.g. tavily)"
                 value={newServerName}
                 onChange={(e) => setNewServerName(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-brand-500"
               />
               <input
                 type="url"
-                placeholder="https://mcp-server.example.com"
+                placeholder="URL (e.g. https://mcp.tavily.com/mcp)"
                 value={newServerUrl}
                 onChange={(e) => setNewServerUrl(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-brand-500"
               />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Header key (optional)"
+                  value={newServerHeaderKey}
+                  onChange={(e) => setNewServerHeaderKey(e.target.value)}
+                  className="flex-1 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-brand-500"
+                />
+                <input
+                  type="password"
+                  placeholder="Header value"
+                  value={newServerHeaderVal}
+                  onChange={(e) => setNewServerHeaderVal(e.target.value)}
+                  className="flex-1 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-brand-500"
+                />
+              </div>
               <button
                 onClick={handleAddServer}
-                disabled={!newServerName.trim() || !newServerUrl.trim()}
+                disabled={!newServerName.trim() || !newServerUrl.trim() || saving}
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-zinc-700 hover:border-brand-500 text-sm text-zinc-400 hover:text-white disabled:opacity-50 disabled:hover:border-zinc-700 disabled:hover:text-zinc-400 transition-all"
               >
-                <Plus className="w-4 h-4" />
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                 Add MCP Server
               </button>
             </div>
@@ -195,12 +259,9 @@ export function SettingsDrawer({
           <section>
             <h3 className="text-sm font-medium text-zinc-400 mb-3">Workspace</h3>
             <p className="text-xs text-zinc-600 mb-3">
-              Your personal workspace is backed by Azure Blob Storage.
+              Your personal workspace is backed by Azure Files.
               Files uploaded here are available to Copilot during sessions.
             </p>
-            <div className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-500">
-              Storage integration coming soon — upload files to give Copilot context about your projects.
-            </div>
           </section>
         </div>
       </div>

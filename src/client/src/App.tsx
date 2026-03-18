@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { ChatContainer } from "./components/ChatContainer";
@@ -15,6 +15,15 @@ export default function App() {
   const [mcpServers, setMcpServers] = useState<McpServerEntry[]>([]);
   const [activeFolder, setActiveFolder] = useState("");
   const [resumingId, setResumingId] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string>("");
+
+  // Fetch user identity from EasyAuth
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.userName) setUserName(data.userName); })
+      .catch(() => {});
+  }, []);
 
   const {
     messages,
@@ -98,6 +107,7 @@ export default function App() {
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenWorkspace={() => setWorkspaceOpen(true)}
+        userName={userName}
       />
 
       {error && (
@@ -149,7 +159,7 @@ export default function App() {
         mcpServers={mcpServers}
         onUpdateMcpServers={setMcpServers}
         currentModel={currentSession?.model ?? ""}
-        workspacePath={null}
+        workspacePath={activeFolder || null}
       />
 
       <WorkspacePanel
