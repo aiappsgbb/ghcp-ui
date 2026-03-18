@@ -156,7 +156,7 @@ module containerApp './modules/container-app.bicep' = {
     managedIdentityClientId: managedIdentity.outputs.clientId
     openAiEndpoint: openAiRbac.outputs.openAiEndpoint
     openAiModelName: aiModelName
-    openAiResourceName: openAiResourceName
+    openAiResourceName: openAiName
     openAiResourceGroup: openAiResourceGroupName
     subscriptionId: subscription().subscriptionId
     keyVaultName: keyVault.outputs.name
