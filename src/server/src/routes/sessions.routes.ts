@@ -22,8 +22,6 @@ export function createSessionRoutes(copilot: CopilotService, workspace: Workspac
 
   // POST /api/sessions — create new session
   router.post("/", async (req: Request, res: Response) => {
-    console.log(`[sessions] POST / — userId=${req.userId}, body=${JSON.stringify(req.body)}`);
-
     if (!copilot.isReady) {
       res.status(503).json({ error: { message: "Copilot service is still initializing. Please wait." } });
       return;
@@ -44,8 +42,7 @@ export function createSessionRoutes(copilot: CopilotService, workspace: Workspac
       res.status(201).json(session);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      const stack = err instanceof Error ? err.stack : "";
-      console.error(`[sessions] POST / FAILED: ${message}`, stack);
+      console.error(`[sessions] createSession error: ${message}`);
       res.status(500).json({ error: { message } });
     }
   });

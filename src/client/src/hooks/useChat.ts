@@ -3,14 +3,6 @@ import type { ChatMessage, ToolEvent, SessionInfo } from "../types";
 
 const API_BASE = "/api";
 
-/** Redirect to EasyAuth login if response is 401/403 */
-function checkAuth(res: Response): Response {
-  if (res.status === 401 || res.status === 403) {
-    window.location.href = "/.auth/login/aad?post_login_redirect_uri=" + encodeURIComponent(window.location.pathname);
-  }
-  return res;
-}
-
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -57,7 +49,7 @@ export function useChat() {
           >
         );
 
-        const res = checkAuth(await fetch(`${API_BASE}/sessions`, {
+        const res = await fetch(`${API_BASE}/sessions`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -67,7 +59,7 @@ export function useChat() {
               : {}),
             ...(workspacePath ? { workspacePath } : {}),
           }),
-        }));
+        });
         if (!res.ok)
           throw new Error(`Failed to create session: ${res.status}`);
         const session: SessionInfo = await res.json();

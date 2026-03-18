@@ -1,6 +1,4 @@
 import express from "express";
-import cors from "cors";
-import helmet from "helmet";
 import morgan from "morgan";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,11 +10,7 @@ import { createChatRoutes } from "./routes/chat.routes.js";
 import { createSessionRoutes } from "./routes/sessions.routes.js";
 import { createWorkspaceRoutes } from "./routes/workspace.routes.js";
 import healthRoutes from "./routes/health.routes.js";
-import { easyAuthMiddleware, requireAuth } from "./middleware/auth.middleware.js";
-import {
-  errorHandler,
-  notFoundHandler,
-} from "./middleware/error.middleware.js";
+import { easyAuthMiddleware } from "./middleware/auth.middleware.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,48 +18,27 @@ async function main() {
   const config = loadConfig();
   const app = express();
 
-  // Middleware
-  app.use(
-    helmet({
-      contentSecurityPolicy: config.isProduction
-        ? undefined
-        : false,
-    })
-  );
-  app.use(
-    cors({
-      origin: config.isProduction ? false : "http://localhost:5173",
-      credentials: true,
-    })
-  );
+  // Minimal middleware
   app.use(morgan(config.isProduction ? "combined" : "dev"));
   app.use(express.json({ limit: "1mb" }));
   app.use(easyAuthMiddleware);
 
-  // Health routes (no auth needed)
+  // Health routes
   app.use("/api", healthRoutes);
 
-  // /api/me — returns user identity (no auth enforcement — diagnostic)
+  // User identity
   app.get("/api/me", (req, res) => {
-    console.log(`[auth-debug] /api/me — principalId=${req.headers["x-ms-client-principal-id"] ?? "NONE"}, userId=${req.userId}`);
-    res.json({
-      userId: req.userId,
-      userName: req.userName,
-      authenticated: req.userId !== "default",
-      loginUrl: "/.auth/login/aad?post_login_redirect_uri=" + encodeURIComponent("/"),
-    });
+    res.json({ userId: req.userId, userName: req.userName });
   });
 
-  // Initialize services (non-blocking — server listens immediately)
+  // Initialize services
   const copilot = new CopilotService(config);
   const workspace = new WorkspaceService(config);
   const basePath = config.workspaceMountPath || "/tmp/ghcp-sessions";
   const userMcp = new UserMcpService(basePath);
-
-  // Wire user MCP loader into copilot service
   copilot.setUserMcpLoader((userId) => userMcp.getUserServers(userId));
 
-  // API routes — no auth enforcement for now (diagnostic)
+  // API routes
   app.use("/api/sessions", createSessionRoutes(copilot, workspace));
   app.use("/api/chat", createChatRoutes(copilot));
   app.use("/api/workspace", createWorkspaceRoutes(workspace));
@@ -190,16 +163,11 @@ async function main() {
   if (config.isProduction) {
     const clientDist = path.resolve(__dirname, "../../client/dist");
     app.use(express.static(clientDist));
-    // SPA fallback: serve index.html for any non-API, non-static request
     app.use((_req, res, next) => {
       if (_req.path.startsWith("/api")) return next();
       res.sendFile(path.join(clientDist, "index.html"));
     });
   }
-
-  // Error handling
-  app.use(notFoundHandler);
-  app.use(errorHandler);
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {
