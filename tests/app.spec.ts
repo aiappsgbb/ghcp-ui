@@ -26,13 +26,14 @@ test.describe("GHCP UI", () => {
     await expect(page.getByRole("button", { name: "New Chat", exact: true })).toBeVisible();
   });
 
-  test("can open new chat dialog", async ({ page }) => {
+  test("new chat button creates session directly with default model", async ({ page }) => {
     await page.goto("/");
-    // Open sidebar first
+    await page.waitForTimeout(2000);
+    // Open sidebar
     await page.getByLabel("Toggle sidebar").click();
     await page.getByRole("button", { name: "New Chat", exact: true }).click();
-    // Dialog should show model selector
-    await expect(page.getByRole("heading", { name: "New Chat" })).toBeVisible();
+    // Should create session immediately (no dialog) — header should show connected
+    await expect(page.getByText("gpt-5.4")).toBeVisible({ timeout: 15000 });
   });
 
   test("has settings button that opens settings drawer", async ({ page }) => {
@@ -185,18 +186,13 @@ test.describe("Models API", () => {
     }
   });
 
-  test("new chat dialog fetches and displays models", async ({ page }) => {
+  test("new chat uses gpt-5.4 as default model", async ({ page }) => {
     await page.goto("/");
+    await page.waitForTimeout(2000);
     await page.getByLabel("Toggle sidebar").click();
     await page.getByRole("button", { name: "New Chat", exact: true }).click();
-    // Wait for the model list to load (should show at least one model button)
-    await expect(page.getByRole("heading", { name: "New Chat" })).toBeVisible();
-    // Either shows loading or models — wait for models to appear
-    await page.waitForTimeout(1000);
-    // The dialog should contain at least one model option
-    const modelButtons = page.locator('[class*="rounded-lg"][class*="border"]').filter({ hasText: /gpt|o3|o4|claude|model/ });
-    const count = await modelButtons.count();
-    expect(count).toBeGreaterThanOrEqual(1);
+    // Session should be created with gpt-5.4 — visible in header or sidebar
+    await expect(page.getByText("gpt-5.4")).toBeVisible({ timeout: 15000 });
   });
 
   test("default model is gpt-5.4", async ({ request }) => {

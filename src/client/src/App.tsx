@@ -4,7 +4,6 @@ import { Sidebar } from "./components/Sidebar";
 import { ChatContainer } from "./components/ChatContainer";
 import { InputBar } from "./components/InputBar";
 import { SettingsDrawer, type McpServerEntry } from "./components/SettingsDrawer";
-import { NewChatDialog } from "./components/NewChatDialog";
 import { WorkspacePanel } from "./components/WorkspacePanel";
 import { useChat } from "./hooks/useChat";
 import { useSessions } from "./hooks/useSessions";
@@ -12,7 +11,6 @@ import { useSessions } from "./hooks/useSessions";
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [newChatOpen, setNewChatOpen] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServerEntry[]>([]);
   const [activeFolder, setActiveFolder] = useState("");
@@ -50,8 +48,8 @@ export default function App() {
   }, [createSession, fetchSessions, mcpServers, activeFolder]);
 
   const handleNewChatClick = useCallback(() => {
-    setNewChatOpen(true);
-  }, []);
+    handleNewSession("gpt-5.4");
+  }, [handleNewSession]);
 
   const handleSelectSession = useCallback(
     async (id: string) => {
@@ -144,13 +142,6 @@ export default function App() {
           />
         </div>
       </div>
-
-      <NewChatDialog
-        isOpen={newChatOpen}
-        onClose={() => setNewChatOpen(false)}
-        onCreateSession={(model) => handleNewSession(model)}
-        defaultModel="gpt-5.4"
-      />
 
       <SettingsDrawer
         isOpen={settingsOpen}
