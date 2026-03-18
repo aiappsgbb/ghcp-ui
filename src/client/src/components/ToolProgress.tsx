@@ -132,6 +132,8 @@ function ExecutionRow({ exec }: { exec: ToolExecution }) {
 }
 
 export function ToolProgress({ events, isLive }: ToolProgressProps) {
+  const [collapsed, setCollapsed] = useState(!isLive);
+
   if (events.length === 0) return null;
 
   const executions = groupExecutions(events);
@@ -144,7 +146,12 @@ export function ToolProgress({ events, isLive }: ToolProgressProps) {
           : "border-gray-700/50 bg-gray-800/30"
       }`}
     >
-      <div className="px-3 py-2 flex items-center gap-2 text-xs text-gray-400 border-b border-gray-700/30">
+      <button
+        onClick={() => !isLive && setCollapsed(!collapsed)}
+        className={`w-full px-3 py-2 flex items-center gap-2 text-xs text-gray-400 ${
+          !collapsed ? "border-b border-gray-700/30" : ""
+        } ${!isLive ? "hover:text-gray-300 cursor-pointer" : "cursor-default"}`}
+      >
         {isLive ? (
           <>
             <div className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
@@ -152,6 +159,14 @@ export function ToolProgress({ events, isLive }: ToolProgressProps) {
           </>
         ) : (
           <>
+            <svg
+              className={`h-3 w-3 transition-transform ${collapsed ? "" : "rotate-90"}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
             <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
                 strokeLinecap="round"
@@ -163,12 +178,14 @@ export function ToolProgress({ events, isLive }: ToolProgressProps) {
             {executions.length} tool{executions.length !== 1 ? "s" : ""} used
           </>
         )}
-      </div>
-      <div className="px-1 py-1">
-        {executions.map((exec, i) => (
-          <ExecutionRow key={exec.toolCallId ?? i} exec={exec} />
-        ))}
-      </div>
+      </button>
+      {(!collapsed || isLive) && (
+        <div className="px-1 py-1">
+          {executions.map((exec, i) => (
+            <ExecutionRow key={exec.toolCallId ?? i} exec={exec} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
