@@ -65,7 +65,9 @@ async function main() {
   if (config.isProduction) {
     const clientDist = path.resolve(__dirname, "../../client/dist");
     app.use(express.static(clientDist));
-    app.get("/{path+}", (_req, res) => {
+    // SPA fallback: serve index.html for any non-API, non-static request
+    app.use((_req, res, next) => {
+      if (_req.path.startsWith("/api")) return next();
       res.sendFile(path.join(clientDist, "index.html"));
     });
   }
