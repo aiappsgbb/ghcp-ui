@@ -168,3 +168,40 @@ test.describe("Workspace & Folders", () => {
     await request.delete("/api/workspace/default/folders/test-project");
   });
 });
+
+test.describe("Models API", () => {
+  test("models API returns valid response with default", async ({ request }) => {
+    const res = await request.get("/api/models");
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data).toHaveProperty("models");
+    expect(data).toHaveProperty("default");
+    expect(Array.isArray(data.models)).toBe(true);
+    expect(data.models.length).toBeGreaterThan(0);
+    // Each model has id and label
+    for (const m of data.models) {
+      expect(m).toHaveProperty("id");
+      expect(m).toHaveProperty("label");
+    }
+  });
+
+  test("new chat dialog fetches and displays models", async ({ page }) => {
+    await page.goto("/");
+    await page.getByLabel("Toggle sidebar").click();
+    await page.getByRole("button", { name: "New Chat", exact: true }).click();
+    // Wait for the model list to load (should show at least one model button)
+    await expect(page.getByRole("heading", { name: "New Chat" })).toBeVisible();
+    // Either shows loading or models — wait for models to appear
+    await page.waitForTimeout(1000);
+    // The dialog should contain at least one model option
+    const modelButtons = page.locator('[class*="rounded-lg"][class*="border"]').filter({ hasText: /gpt|o3|o4|claude|model/ });
+    const count = await modelButtons.count();
+    expect(count).toBeGreaterThanOrEqual(1);
+  });
+
+  test("default model is gpt-5.4", async ({ request }) => {
+    const res = await request.get("/api/models");
+    const data = await res.json();
+    expect(data.default).toBe("gpt-5.4");
+  });
+});

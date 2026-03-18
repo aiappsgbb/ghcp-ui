@@ -125,7 +125,7 @@ export default function App() {
         isOpen={newChatOpen}
         onClose={() => setNewChatOpen(false)}
         onCreateSession={(model) => handleNewSession(model)}
-        defaultModel="gpt-4.1"
+        defaultModel="gpt-5.4"
       />
 
       <SettingsDrawer

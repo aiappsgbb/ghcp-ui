@@ -61,6 +61,36 @@ async function main() {
     res.json({ servers });
   });
 
+  // Models endpoint — list deployed models from Azure OpenAI
+  app.get("/api/models", async (_req, res) => {
+    try {
+      const endpoint = config.azure.foundryEndpoint.replace(/\/openai\/v1\/?$/, "");
+      const apiKey = config.azure.foundryApiKey;
+      if (!endpoint || !apiKey) {
+        res.json({ models: [{ id: config.azure.foundryModel, label: config.azure.foundryModel }], default: config.azure.foundryModel });
+        return;
+      }
+      const resp = await fetch(`${endpoint}/openai/deployments?api-version=2024-10-01`, {
+        headers: { "api-key": apiKey },
+      });
+      if (!resp.ok) {
+        console.warn(`[Models] Failed to list deployments: ${resp.status}`);
+        res.json({ models: [{ id: config.azure.foundryModel, label: config.azure.foundryModel }], default: config.azure.foundryModel });
+        return;
+      }
+      const data = await resp.json() as { data?: Array<{ id: string; model: string; status: string }> };
+      const chatModels = (data.data ?? [])
+        .filter((d) => d.status === "succeeded")
+        .filter((d) => !d.model.includes("embedding") && !d.model.includes("whisper") && !d.model.includes("dall"))
+        .map((d) => ({ id: d.id, label: d.model }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+      res.json({ models: chatModels, default: config.azure.foundryModel });
+    } catch (err) {
+      console.warn("[Models] Error listing models:", err);
+      res.json({ models: [{ id: config.azure.foundryModel, label: config.azure.foundryModel }], default: config.azure.foundryModel });
+    }
+  });
+
   // Serve static frontend in production
   if (config.isProduction) {
     const clientDist = path.resolve(__dirname, "../../client/dist");

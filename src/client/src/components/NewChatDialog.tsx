@@ -1,12 +1,10 @@
-import { useState } from "react";
-import { X, Sparkles } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Sparkles, Loader2 } from "lucide-react";
 
-const AVAILABLE_MODELS = [
-  { id: "gpt-4.1", label: "GPT-4.1", description: "Fast and capable" },
-  { id: "gpt-5", label: "GPT-5", description: "Most advanced" },
-  { id: "claude-sonnet-4.5", label: "Claude Sonnet 4.5", description: "Balanced" },
-  { id: "claude-opus-4.5", label: "Claude Opus 4.5", description: "Highest quality" },
-];
+interface ModelInfo {
+  id: string;
+  label: string;
+}
 
 interface NewChatDialogProps {
   isOpen: boolean;
@@ -21,7 +19,24 @@ export function NewChatDialog({
   onCreateSession,
   defaultModel,
 }: NewChatDialogProps) {
+  const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState(defaultModel);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setLoading(true);
+    fetch("/api/models")
+      .then((r) => r.json())
+      .then((data: { models: ModelInfo[]; default: string }) => {
+        setModels(data.models);
+        if (data.default) setSelectedModel(data.default);
+      })
+      .catch(() => {
+        setModels([{ id: defaultModel, label: defaultModel }]);
+      })
+      .finally(() => setLoading(false));
+  }, [isOpen, defaultModel]);
 
   if (!isOpen) return null;
 
@@ -57,31 +72,38 @@ export function NewChatDialog({
             <label className="text-sm font-medium text-zinc-400 block mb-3">
               Choose a model
             </label>
-            <div className="space-y-1.5">
-              {AVAILABLE_MODELS.map((model) => (
-                <button
-                  key={model.id}
-                  onClick={() => setSelectedModel(model.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all text-left ${
-                    selectedModel === model.id
-                      ? "border-brand-500 bg-brand-600/10 text-white"
-                      : "border-zinc-700 hover:border-zinc-600 text-zinc-300"
-                  }`}
-                >
-                  <div
-                    className={`w-3 h-3 rounded-full border-2 shrink-0 ${
+            {loading ? (
+              <div className="flex items-center justify-center py-6 text-zinc-500">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                Loading models…
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                {models.map((model) => (
+                  <button
+                    key={model.id}
+                    onClick={() => setSelectedModel(model.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all text-left ${
                       selectedModel === model.id
-                        ? "border-brand-500 bg-brand-500"
-                        : "border-zinc-600"
+                        ? "border-brand-500 bg-brand-600/10 text-white"
+                        : "border-zinc-700 hover:border-zinc-600 text-zinc-300"
                     }`}
-                  />
-                  <div>
-                    <p className="text-sm font-medium">{model.label}</p>
-                    <p className="text-xs text-zinc-500">{model.description}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
+                  >
+                    <div
+                      className={`w-3 h-3 rounded-full border-2 shrink-0 ${
+                        selectedModel === model.id
+                          ? "border-brand-500 bg-brand-500"
+                          : "border-zinc-600"
+                      }`}
+                    />
+                    <div>
+                      <p className="text-sm font-medium">{model.id}</p>
+                      <p className="text-xs text-zinc-500">{model.label}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="px-5 py-4 border-t border-zinc-800 flex gap-2">
