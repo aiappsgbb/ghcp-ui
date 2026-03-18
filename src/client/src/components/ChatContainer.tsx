@@ -71,10 +71,11 @@ export function ChatContainer({
         ) : (
           messages.map((msg) => (
             <div key={msg.id}>
-              <MessageBubble message={msg} />
+              {/* Show tool events BEFORE the assistant response */}
               {msg.role === "assistant" && msg.toolEvents && msg.toolEvents.length > 0 && (
                 <ToolProgress events={msg.toolEvents} />
               )}
+              <MessageBubble message={msg} />
             </div>
           ))
         )}

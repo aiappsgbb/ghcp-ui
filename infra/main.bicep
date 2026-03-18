@@ -22,11 +22,18 @@ param aiModelName string = 'gpt-4.1'
 param containerImageName string = ''
 
 @secure()
-@description('MCP servers JSON config (set via azd env set MCP_SERVERS_JSON)')
-param mcpServersJson string = '{}'
+@description('Context7 API key for MCP server')
+param context7ApiKey string = ''
+
+@secure()
+@description('Tavily API key for MCP server')
+param tavilyApiKey string = ''
 
 // azd system variable: tells us if the container app already exists
 param webAppExists bool = false
+
+// Construct MCP servers JSON from individual API keys (avoids nested-JSON parameter escaping issues)
+var mcpServersJsonBuilt = '{"mslearn":{"type":"http","url":"https://learn.microsoft.com/api/mcp","headers":{},"tools":["*"]},"context7":{"type":"http","url":"https://mcp.context7.com/mcp","headers":{"CONTEXT7_API_KEY":"${context7ApiKey}"},"tools":["*"]},"tavily":{"type":"http","url":"https://mcp.tavily.com/mcp/?tavilyApiKey=${tavilyApiKey}","headers":{},"tools":["*"]}}'
 
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -99,7 +106,7 @@ module keyVault './modules/key-vault.bicep' = {
     managedIdentityPrincipalId: managedIdentity.outputs.principalId
     openAiEndpoint: openAiRbac.outputs.openAiEndpoint
     openAiKey: openAiRbac.outputs.openAiKey
-    mcpServersJson: mcpServersJson
+    mcpServersJson: mcpServersJsonBuilt
   }
 }
 

@@ -20,8 +20,11 @@
     "containerImageName": {
       "value": "${SERVICE_WEB_IMAGE_NAME=}"
     },
-    "mcpServersJson": {
-      "value": "${MCP_SERVERS_JSON={}}"
+    "context7ApiKey": {
+      "value": "${CONTEXT7_API_KEY=}"
+    },
+    "tavilyApiKey": {
+      "value": "${TAVILY_API_KEY=}"
     },
     "webAppExists": {
       "value": "${SERVICE_WEB_RESOURCE_EXISTS=false}"
