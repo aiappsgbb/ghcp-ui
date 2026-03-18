@@ -1,5 +1,14 @@
-import { CopilotClient, approveAll, type CopilotSession, type MCPServerConfig, type SessionEventHandler } from "@github/copilot-sdk";
+import {
+  CopilotClient,
+  approveAll,
+  type CopilotSession,
+  type MCPServerConfig,
+  type SessionEventHandler,
+  type SessionMetadata,
+} from "@github/copilot-sdk";
 import { v4 as uuidv4 } from "uuid";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
 import type { AppConfig } from "../config.js";
 
 export interface ChatMessage {
@@ -12,19 +21,30 @@ export interface ChatMessage {
 export interface SessionInfo {
   id: string;
   createdAt: string;
+  modifiedAt?: string;
   model: string;
+  title?: string;
+  summary?: string;
   messageCount: number;
+  active: boolean;
+}
+
+/** Lightweight sidecar stored alongside each session */
+interface SessionMeta {
+  model: string;
+  title?: string;
+  createdAt: string;
 }
 
 interface ManagedSession {
   session: CopilotSession;
   model: string;
   createdAt: Date;
-  messages: ChatMessage[];
 }
 
 export class CopilotService {
   private client: CopilotClient | null = null;
+  /** Active (in-memory) sessions only */
   private sessions = new Map<string, ManagedSession>();
   private config: AppConfig;
   private _ready = false;
@@ -35,6 +55,38 @@ export class CopilotService {
 
   get isReady(): boolean {
     return this._ready && this.client !== null;
+  }
+
+  /** Directory where the CLI persists session state */
+  private get configDir(): string {
+    const base = this.config.workspaceMountPath || "/tmp/ghcp-sessions";
+    const dir = join(base, ".copilot");
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  /** Path to the sidecar metadata file for a session */
+  private metaPath(sessionId: string): string {
+    const dir = join(this.configDir, "session-meta");
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    return join(dir, `${sessionId}.json`);
+  }
+
+  private writeMeta(sessionId: string, meta: SessionMeta): void {
+    try {
+      writeFileSync(this.metaPath(sessionId), JSON.stringify(meta));
+    } catch (err) {
+      console.warn(`[CopilotService] Failed to write session meta for ${sessionId}:`, err);
+    }
+  }
+
+  private readMeta(sessionId: string): SessionMeta | null {
+    try {
+      const raw = readFileSync(this.metaPath(sessionId), "utf-8");
+      return JSON.parse(raw) as SessionMeta;
+    } catch {
+      return null;
+    }
   }
 
   async initialize(): Promise<void> {
@@ -53,6 +105,7 @@ export class CopilotService {
       await this.client.start();
       this._ready = true;
       console.log("[CopilotService] Client started successfully");
+      console.log(`[CopilotService] configDir: ${this.configDir}`);
     } catch (err) {
       console.warn("[CopilotService] Failed to start Copilot CLI — chat unavailable");
       console.warn("[CopilotService]", (err as Error).message ?? err);
@@ -62,6 +115,7 @@ export class CopilotService {
   }
 
   async shutdown(): Promise<void> {
+    // Destroy active sessions (state preserved on disk for later resume)
     for (const [id, managed] of this.sessions) {
       try {
         await managed.session.destroy();
@@ -75,40 +129,29 @@ export class CopilotService {
       await this.client.stop();
       this.client = null;
     }
-    console.log("[CopilotService] Shut down");
+    console.log("[CopilotService] Shut down (sessions preserved on disk for resume)");
   }
 
-  async createSession(model?: string, workingDirectory?: string, mcpServers?: Record<string, { type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>): Promise<SessionInfo> {
-    if (!this.client) throw new Error("CopilotService not initialized");
-
-    const sessionId = uuidv4();
-    const selectedModel = model ?? this.config.azure.foundryModel;
-
-    const sessionConfig: {
-      sessionId: string;
-      model: string;
-      onPermissionRequest: typeof approveAll;
-      workingDirectory?: string;
-      mcpServers?: Record<string, MCPServerConfig>;
-      provider?: {
-        type: "openai" | "azure" | "anthropic";
-        baseUrl: string;
-        wireApi: "responses" | "completions";
-        apiKey: string;
-      };
-    } = {
-      sessionId,
-      model: selectedModel,
-      onPermissionRequest: approveAll,
+  /** Build the BYOK provider config if configured */
+  private get providerConfig() {
+    if (!this.config.copilot.useByok) return undefined;
+    return {
+      type: "openai" as const,
+      baseUrl: this.config.azure.foundryEndpoint,
+      wireApi: "responses" as const,
+      apiKey: this.config.azure.foundryApiKey,
     };
+  }
 
-    // Build merged MCP servers: global config + workspace FS + per-session
-    const globalMcp = this.config.mcpServers;
-    const mergedMcp: Record<string, MCPServerConfig> = { ...globalMcp };
+  /** Build merged MCP servers from global + workspace + per-session */
+  private buildMcpServers(
+    workingDirectory?: string,
+    extra?: Record<string, { type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>
+  ): Record<string, MCPServerConfig> | undefined {
+    const merged: Record<string, MCPServerConfig> = { ...this.config.mcpServers };
 
     if (workingDirectory) {
-      sessionConfig.workingDirectory = workingDirectory;
-      mergedMcp.workspace = {
+      merged.workspace = {
         type: "local" as const,
         command: "npx",
         args: ["-y", "@modelcontextprotocol/server-filesystem", workingDirectory],
@@ -116,40 +159,174 @@ export class CopilotService {
       };
     }
 
-    if (mcpServers) {
-      Object.assign(mergedMcp, mcpServers);
-    }
+    if (extra) Object.assign(merged, extra);
 
-    if (Object.keys(mergedMcp).length > 0) {
-      sessionConfig.mcpServers = mergedMcp;
-    }
+    return Object.keys(merged).length > 0 ? merged : undefined;
+  }
 
-    if (this.config.copilot.useByok) {
-      sessionConfig.provider = {
-        type: "openai",
-        baseUrl: this.config.azure.foundryEndpoint,
-        wireApi: "responses",
-        apiKey: this.config.azure.foundryApiKey,
-      };
-    }
+  async createSession(
+    model?: string,
+    workingDirectory?: string,
+    mcpServers?: Record<string, { type: "http" | "sse"; url: string; headers?: Record<string, string>; tools: string[] }>
+  ): Promise<SessionInfo> {
+    if (!this.client) throw new Error("CopilotService not initialized");
 
-    const session = await this.client.createSession(sessionConfig);
+    const sessionId = uuidv4();
+    const selectedModel = model ?? this.config.azure.foundryModel;
 
-    const managed: ManagedSession = {
-      session,
+    const session = await this.client.createSession({
+      sessionId,
       model: selectedModel,
-      createdAt: new Date(),
-      messages: [],
-    };
+      configDir: this.configDir,
+      onPermissionRequest: approveAll,
+      workingDirectory,
+      mcpServers: this.buildMcpServers(workingDirectory, mcpServers),
+      provider: this.providerConfig,
+    });
 
-    this.sessions.set(sessionId, managed);
+    const now = new Date();
+    this.sessions.set(sessionId, { session, model: selectedModel, createdAt: now });
+    this.writeMeta(sessionId, { model: selectedModel, createdAt: now.toISOString() });
 
     return {
       id: sessionId,
-      createdAt: managed.createdAt.toISOString(),
+      createdAt: now.toISOString(),
       model: selectedModel,
       messageCount: 0,
+      active: true,
     };
+  }
+
+  async resumeSession(sessionId: string): Promise<SessionInfo> {
+    if (!this.client) throw new Error("CopilotService not initialized");
+
+    // Already active?
+    if (this.sessions.has(sessionId)) {
+      const managed = this.sessions.get(sessionId)!;
+      return {
+        id: sessionId,
+        createdAt: managed.createdAt.toISOString(),
+        model: managed.model,
+        messageCount: 0,
+        active: true,
+      };
+    }
+
+    const meta = this.readMeta(sessionId);
+    const model = meta?.model ?? this.config.azure.foundryModel;
+
+    const session = await this.client.resumeSession(sessionId, {
+      configDir: this.configDir,
+      onPermissionRequest: approveAll,
+      mcpServers: this.buildMcpServers(),
+      provider: this.providerConfig,
+      model,
+    });
+
+    const createdAt = meta?.createdAt ? new Date(meta.createdAt) : new Date();
+    this.sessions.set(sessionId, { session, model, createdAt });
+
+    return {
+      id: sessionId,
+      createdAt: createdAt.toISOString(),
+      model,
+      title: meta?.title,
+      messageCount: 0,
+      active: true,
+    };
+  }
+
+  /** List all sessions: active in-memory + persisted on disk (merged, deduped) */
+  async listSessions(): Promise<SessionInfo[]> {
+    if (!this.client) return [];
+
+    let persisted: SessionMetadata[] = [];
+    try {
+      persisted = await this.client.listSessions();
+    } catch (err) {
+      console.warn("[CopilotService] Failed to list persisted sessions:", err);
+    }
+
+    const seen = new Set<string>();
+    const results: SessionInfo[] = [];
+
+    // Start with persisted sessions from SDK
+    for (const s of persisted) {
+      seen.add(s.sessionId);
+      const isActive = this.sessions.has(s.sessionId);
+      const meta = this.readMeta(s.sessionId);
+      results.push({
+        id: s.sessionId,
+        createdAt: s.startTime?.toISOString?.() ?? meta?.createdAt ?? new Date().toISOString(),
+        modifiedAt: s.modifiedTime?.toISOString?.(),
+        model: meta?.model ?? this.config.azure.foundryModel,
+        title: meta?.title,
+        summary: s.summary,
+        messageCount: 0,
+        active: isActive,
+      });
+    }
+
+    // Add active in-memory sessions not yet persisted to disk
+    for (const [id, managed] of this.sessions) {
+      if (!seen.has(id)) {
+        const meta = this.readMeta(id);
+        results.push({
+          id,
+          createdAt: managed.createdAt.toISOString(),
+          model: managed.model,
+          title: meta?.title,
+          messageCount: 0,
+          active: true,
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /** Get session messages — uses SDK getMessages() for full history from disk */
+  async getSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) throw new Error(`Session ${sessionId} not active. Resume it first.`);
+
+    try {
+      const events = await managed.session.getMessages();
+      const messages: ChatMessage[] = [];
+
+      for (const evt of events) {
+        const e = evt as { type: string; id?: string; timestamp?: string; data?: Record<string, unknown> };
+        if (e.type === "user.message" && e.data?.content) {
+          messages.push({
+            id: e.id ?? uuidv4(),
+            role: "user",
+            content: e.data.content as string,
+            timestamp: e.timestamp ?? new Date().toISOString(),
+          });
+        } else if (e.type === "assistant.message" && e.data?.content) {
+          messages.push({
+            id: e.id ?? uuidv4(),
+            role: "assistant",
+            content: e.data.content as string,
+            timestamp: e.timestamp ?? new Date().toISOString(),
+          });
+        }
+      }
+
+      return messages;
+    } catch (err) {
+      console.warn(`[CopilotService] Failed to get messages for ${sessionId}:`, err);
+      return [];
+    }
+  }
+
+  /** Rename a session */
+  updateSessionTitle(sessionId: string, title: string): void {
+    const meta = this.readMeta(sessionId);
+    if (meta) {
+      meta.title = title;
+      this.writeMeta(sessionId, meta);
+    }
   }
 
   async *streamChat(
@@ -157,7 +334,7 @@ export class CopilotService {
     prompt: string
   ): AsyncGenerator<{ type: string; data: string }> {
     const managed = this.sessions.get(sessionId);
-    if (!managed) throw new Error(`Session ${sessionId} not found`);
+    if (!managed) throw new Error(`Session ${sessionId} not active. Resume it first.`);
 
     const userMsg: ChatMessage = {
       id: uuidv4(),
@@ -165,11 +342,9 @@ export class CopilotService {
       content: prompt,
       timestamp: new Date().toISOString(),
     };
-    managed.messages.push(userMsg);
 
     yield { type: "user_message", data: JSON.stringify(userMsg) };
 
-    // Collect events via a queue so we can yield them as SSE
     const eventQueue: Array<{ type: string; data: string }> = [];
     let resolveWait: (() => void) | null = null;
     let isDone = false;
@@ -181,7 +356,6 @@ export class CopilotService {
       resolveWait?.();
     };
 
-    // Subscribe to all events via catch-all handler
     const handler = (event: { type: string; data?: Record<string, unknown> }) => {
       const t = event.type;
       const d = event.data ?? {};
@@ -265,10 +439,8 @@ export class CopilotService {
 
     managed.session.on(handler as SessionEventHandler);
 
-    // Send the prompt (non-blocking)
     await managed.session.send({ prompt });
 
-    // Yield events as they arrive
     const timeout = setTimeout(() => {
       isDone = true;
       resolveWait?.();
@@ -297,7 +469,6 @@ export class CopilotService {
       content: fullContent,
       timestamp: new Date().toISOString(),
     };
-    managed.messages.push(assistantMsg);
 
     yield {
       type: "assistant_message",
@@ -310,54 +481,50 @@ export class CopilotService {
     prompt: string
   ): Promise<ChatMessage> {
     const managed = this.sessions.get(sessionId);
-    if (!managed) throw new Error(`Session ${sessionId} not found`);
-
-    const userMsg: ChatMessage = {
-      id: uuidv4(),
-      role: "user",
-      content: prompt,
-      timestamp: new Date().toISOString(),
-    };
-    managed.messages.push(userMsg);
+    if (!managed) throw new Error(`Session ${sessionId} not active. Resume it first.`);
 
     const response = await managed.session.sendAndWait({ prompt });
     const content = response?.data?.content ?? "";
 
-    const assistantMsg: ChatMessage = {
+    return {
       id: uuidv4(),
       role: "assistant",
       content,
       timestamp: new Date().toISOString(),
     };
-    managed.messages.push(assistantMsg);
-
-    return assistantMsg;
   }
 
-  listSessions(): SessionInfo[] {
-    return Array.from(this.sessions.entries()).map(([id, managed]) => ({
-      id,
-      createdAt: managed.createdAt.toISOString(),
-      model: managed.model,
-      messageCount: managed.messages.length,
-    }));
-  }
-
-  getSessionMessages(sessionId: string): ChatMessage[] {
-    const managed = this.sessions.get(sessionId);
-    if (!managed) throw new Error(`Session ${sessionId} not found`);
-    return managed.messages;
-  }
-
+  /** Delete a session permanently (removes from disk) */
   async deleteSession(sessionId: string): Promise<void> {
     const managed = this.sessions.get(sessionId);
-    if (!managed) throw new Error(`Session ${sessionId} not found`);
-
-    try {
-      await managed.session.destroy();
-    } catch {
-      // Ignore errors during destroy
+    if (managed) {
+      try {
+        await managed.session.destroy();
+      } catch {
+        // Ignore destroy errors
+      }
+      this.sessions.delete(sessionId);
     }
-    this.sessions.delete(sessionId);
+
+    if (this.client) {
+      try {
+        await this.client.deleteSession(sessionId);
+      } catch {
+        // Session may not exist on disk
+      }
+    }
+
+    // Clean up sidecar
+    try {
+      const { unlinkSync } = await import("fs");
+      unlinkSync(this.metaPath(sessionId));
+    } catch {
+      // Sidecar may not exist
+    }
+  }
+
+  /** Check if a session is currently active in memory */
+  isSessionActive(sessionId: string): boolean {
+    return this.sessions.has(sessionId);
   }
 }

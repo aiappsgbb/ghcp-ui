@@ -2,10 +2,11 @@ import {
   Plus,
   Trash2,
   MessageSquare,
-  Clock,
   X,
+  Circle,
+  Pause,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SessionInfo } from "../types";
 
 interface SidebarProps {
@@ -16,6 +17,30 @@ interface SidebarProps {
   onDeleteSession: (id: string) => void;
   isOpen: boolean;
   onClose: () => void;
+  resumingId?: string | null;
+}
+
+function SessionLabel({ session }: { session: SessionInfo }) {
+  const label = session.title || session.summary || session.model;
+  const time = session.modifiedAt ?? session.createdAt;
+  const dateStr = new Date(time).toLocaleDateString([], { month: "short", day: "numeric" });
+  const timeStr = new Date(time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <div className="flex-1 min-w-0">
+      <p className="text-sm truncate">{label}</p>
+      <div className="flex items-center gap-1 text-xs text-zinc-600">
+        {session.active ? (
+          <Circle className="w-2.5 h-2.5 fill-green-500 text-green-500 shrink-0" />
+        ) : (
+          <Pause className="w-2.5 h-2.5 text-zinc-600 shrink-0" />
+        )}
+        <span className="truncate">
+          {session.model} · {dateStr} {timeStr}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function Sidebar({
@@ -26,10 +51,11 @@ export function Sidebar({
   onDeleteSession,
   isOpen,
   onClose,
+  resumingId,
 }: SidebarProps) {
   const sidebarRef = useRef<HTMLElement>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // Close on Escape
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen) onClose();
@@ -40,7 +66,6 @@ export function Sidebar({
 
   const handleSelect = (id: string) => {
     onSelectSession(id);
-    // Auto-close on mobile
     if (window.innerWidth < 768) onClose();
   };
 
@@ -49,9 +74,19 @@ export function Sidebar({
     if (window.innerWidth < 768) onClose();
   };
 
+  const handleDelete = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (confirmDeleteId === id) {
+      onDeleteSession(id);
+      setConfirmDeleteId(null);
+    } else {
+      setConfirmDeleteId(id);
+      setTimeout(() => setConfirmDeleteId(null), 3000);
+    }
+  };
+
   return (
     <>
-      {/* Mobile backdrop */}
       {isOpen && (
         <div
           className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm md:hidden"
@@ -59,7 +94,6 @@ export function Sidebar({
         />
       )}
 
-      {/* Sidebar */}
       <aside
         ref={sidebarRef}
         className={`
@@ -68,7 +102,6 @@ export function Sidebar({
           ${isOpen ? "translate-x-0" : "-translate-x-full md:-translate-x-full md:hidden"}
         `}
       >
-        {/* Mobile close button */}
         <div className="flex items-center justify-between p-3 md:hidden">
           <span className="text-sm font-medium text-zinc-400">Chats</span>
           <button
@@ -103,31 +136,23 @@ export function Sidebar({
                   activeSessionId === session.id
                     ? "bg-zinc-800 text-white"
                     : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 active:bg-zinc-800"
-                }`}
+                } ${resumingId === session.id ? "opacity-60 pointer-events-none" : ""}`}
                 onClick={() => handleSelect(session.id)}
               >
-                <MessageSquare className="w-4 h-4 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm truncate">
-                    {session.model}
-                  </p>
-                  <div className="flex items-center gap-1 text-xs text-zinc-600">
-                    <Clock className="w-3 h-3" />
-                    {new Date(session.createdAt).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                    <span className="ml-1">
-                      · {session.messageCount} msgs
-                    </span>
-                  </div>
-                </div>
+                {resumingId === session.id ? (
+                  <div className="w-4 h-4 shrink-0 animate-spin border-2 border-brand-400 border-t-transparent rounded-full" />
+                ) : (
+                  <MessageSquare className="w-4 h-4 shrink-0" />
+                )}
+                <SessionLabel session={session} />
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteSession(session.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 group-active:opacity-100 p-1.5 rounded hover:bg-zinc-700 text-zinc-500 hover:text-red-400 transition-all min-w-[28px] min-h-[28px] flex items-center justify-center"
+                  onClick={(e) => handleDelete(e, session.id)}
+                  className={`p-1.5 rounded hover:bg-zinc-700 transition-all min-w-[28px] min-h-[28px] flex items-center justify-center ${
+                    confirmDeleteId === session.id
+                      ? "opacity-100 text-red-400 bg-red-950/30"
+                      : "opacity-0 group-hover:opacity-100 group-active:opacity-100 text-zinc-500 hover:text-red-400"
+                  }`}
+                  title={confirmDeleteId === session.id ? "Click again to confirm" : "Delete session"}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>

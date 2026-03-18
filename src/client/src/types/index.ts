@@ -22,8 +22,12 @@ export interface ToolEvent {
 export interface SessionInfo {
   id: string;
   createdAt: string;
+  modifiedAt?: string;
   model: string;
+  title?: string;
+  summary?: string;
   messageCount: number;
+  active?: boolean;
 }
 
 export interface ApiError {

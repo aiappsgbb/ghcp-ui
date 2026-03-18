@@ -205,3 +205,120 @@ test.describe("Models API", () => {
     expect(data.default).toBe("gpt-5.4");
   });
 });
+
+test.describe("Session Persistence", () => {
+  test("sessions API returns active flag", async ({ request }) => {
+    const res = await request.get("/api/sessions");
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data).toHaveProperty("sessions");
+    // Each session should have an active field
+    for (const s of data.sessions) {
+      expect(typeof s.active).toBe("boolean");
+    }
+  });
+
+  test("create session then see it listed with active=true", async ({ request }) => {
+    // Create a session
+    const createRes = await request.post("/api/sessions", {
+      data: { model: "gpt-4.1" },
+    });
+    expect(createRes.ok()).toBeTruthy();
+    const created = await createRes.json();
+    expect(created.id).toBeTruthy();
+    expect(created.active).toBe(true);
+
+    // List sessions — should include the new one as active
+    const listRes = await request.get("/api/sessions");
+    const data = await listRes.json();
+    const found = data.sessions.find((s: { id: string }) => s.id === created.id);
+    expect(found).toBeTruthy();
+    expect(found.active).toBe(true);
+    expect(found.model).toBe("gpt-4.1");
+
+    // Cleanup
+    await request.delete(`/api/sessions/${created.id}`);
+  });
+
+  test("resume endpoint returns session info", async ({ request }) => {
+    // Create a session first
+    const createRes = await request.post("/api/sessions", {
+      data: { model: "gpt-4.1" },
+    });
+    const created = await createRes.json();
+
+    // Resume should work (session is already active, should be a no-op return)
+    const resumeRes = await request.post(`/api/sessions/${created.id}/resume`);
+    expect(resumeRes.ok()).toBeTruthy();
+    const resumed = await resumeRes.json();
+    expect(resumed.id).toBe(created.id);
+    expect(resumed.active).toBe(true);
+
+    // Cleanup
+    await request.delete(`/api/sessions/${created.id}`);
+  });
+
+  test("rename session via PATCH", async ({ request }) => {
+    // Create a session
+    const createRes = await request.post("/api/sessions", {
+      data: { model: "gpt-4.1" },
+    });
+    const created = await createRes.json();
+
+    // Rename it
+    const patchRes = await request.patch(`/api/sessions/${created.id}`, {
+      data: { title: "My Test Chat" },
+    });
+    expect(patchRes.ok()).toBeTruthy();
+
+    // List and verify the title is shown
+    const listRes = await request.get("/api/sessions");
+    const data = await listRes.json();
+    const found = data.sessions.find((s: { id: string }) => s.id === created.id);
+    expect(found?.title).toBe("My Test Chat");
+
+    // Cleanup
+    await request.delete(`/api/sessions/${created.id}`);
+  });
+
+  test("delete session removes it from list", async ({ request }) => {
+    const createRes = await request.post("/api/sessions", {
+      data: { model: "gpt-4.1" },
+    });
+    const created = await createRes.json();
+
+    // Delete
+    const delRes = await request.delete(`/api/sessions/${created.id}`);
+    expect(delRes.status()).toBe(204);
+
+    // List — should not contain it
+    const listRes = await request.get("/api/sessions");
+    const data = await listRes.json();
+    const found = data.sessions.find((s: { id: string }) => s.id === created.id);
+    expect(found).toBeFalsy();
+  });
+
+  test("sidebar shows active indicator for sessions", async ({ page, request }) => {
+    // Create session via API first
+    const createRes = await request.post("/api/sessions", {
+      data: { model: "gpt-4.1" },
+    });
+    const created = await createRes.json();
+
+    // Now load the page — it will fetch sessions on mount and should find our session
+    await page.goto("/");
+    // Wait for session list fetch to complete
+    await page.waitForTimeout(3000);
+
+    // Open sidebar
+    await page.getByLabel("Toggle sidebar").click();
+    await page.waitForTimeout(1000);
+
+    // The sidebar should show the session with the model text
+    const sessionEntry = page.locator('aside').getByText("gpt-4.1");
+    await expect(sessionEntry.first()).toBeVisible({ timeout: 10000 });
+
+    // Cleanup
+    await request.delete(`/api/sessions/${created.id}`);
+  });
+});

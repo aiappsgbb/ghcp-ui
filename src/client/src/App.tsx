@@ -16,6 +16,7 @@ export default function App() {
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServerEntry[]>([]);
   const [activeFolder, setActiveFolder] = useState("");
+  const [resumingId, setResumingId] = useState<string | null>(null);
 
   const {
     messages,
@@ -35,11 +36,11 @@ export default function App() {
     sessions,
     fetchSessions,
     deleteSession: removeSession,
+    resumeSession,
   } = useSessions();
 
   const handleNewSession = useCallback(async (model?: string) => {
     try {
-      // Build workspace path from active folder
       const wsPath = activeFolder || undefined;
       await createSession(model, mcpServers.length > 0 ? mcpServers : undefined, wsPath);
       await fetchSessions();
@@ -55,12 +56,30 @@ export default function App() {
   const handleSelectSession = useCallback(
     async (id: string) => {
       const session = sessions.find((s) => s.id === id);
-      if (session) {
+      if (!session) return;
+
+      if (session.active) {
+        // Already active in memory — just switch to it
         setCurrentSession(session);
         await loadSessionMessages(id);
+      } else {
+        // Paused session — needs resume
+        setResumingId(id);
+        try {
+          const resumed = await resumeSession(id);
+          if (resumed) {
+            setCurrentSession(resumed);
+            await loadSessionMessages(id);
+            await fetchSessions();
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to resume session");
+        } finally {
+          setResumingId(null);
+        }
       }
     },
-    [sessions, setCurrentSession, loadSessionMessages]
+    [sessions, setCurrentSession, loadSessionMessages, resumeSession, fetchSessions, setError]
   );
 
   const handleDeleteSession = useCallback(
@@ -104,6 +123,7 @@ export default function App() {
           onDeleteSession={handleDeleteSession}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
+          resumingId={resumingId}
         />
 
         <div className="flex-1 flex flex-col min-w-0">
