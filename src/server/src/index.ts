@@ -75,17 +75,22 @@ async function main() {
       // Get ARM token via managed identity (works in ACA)
       const identityEndpoint = process.env.IDENTITY_ENDPOINT;
       const identityHeader = process.env.IDENTITY_HEADER;
+      const clientId = process.env.AZURE_CLIENT_ID;
       let armToken: string | undefined;
 
       if (identityEndpoint && identityHeader) {
-        const tokenResp = await fetch(
-          `${identityEndpoint}?api-version=2019-08-01&resource=https://management.azure.com`,
-          { headers: { "X-IDENTITY-HEADER": identityHeader } }
-        );
+        const tokenUrl = `${identityEndpoint}?api-version=2019-08-01&resource=https://management.azure.com${clientId ? `&client_id=${clientId}` : ""}`;
+        const tokenResp = await fetch(tokenUrl, {
+          headers: { "X-IDENTITY-HEADER": identityHeader },
+        });
         if (tokenResp.ok) {
           const tokenData = await tokenResp.json() as { access_token: string };
           armToken = tokenData.access_token;
+        } else {
+          console.warn(`[Models] Managed identity token failed: ${tokenResp.status} ${await tokenResp.text()}`);
         }
+      } else {
+        console.warn(`[Models] IDENTITY_ENDPOINT=${!!identityEndpoint} IDENTITY_HEADER=${!!identityHeader}`);
       }
 
       if (!armToken) {
