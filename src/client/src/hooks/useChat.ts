@@ -98,31 +98,42 @@ export function useChat() {
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
 
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const eventLine = lines[lines.indexOf(line) - 1];
-              const eventType = eventLine?.startsWith("event: ")
-                ? eventLine.slice(7)
-                : "message";
+          // Parse SSE events: "event: <type>\ndata: <json>\n\n"
+          const events = buffer.split("\n\n");
+          buffer = events.pop() ?? "";
 
-              if (eventType === "done") continue;
-              if (eventType === "error") {
-                const errData = JSON.parse(line.slice(6));
-                setError(errData.message);
-                continue;
+          for (const event of events) {
+            const lines = event.split("\n");
+            let eventType = "message";
+            let dataStr = "";
+
+            for (const line of lines) {
+              if (line.startsWith("event: ")) {
+                eventType = line.slice(7).trim();
+              } else if (line.startsWith("data: ")) {
+                dataStr = line.slice(6);
               }
+            }
 
+            if (eventType === "done" || !dataStr) continue;
+            if (eventType === "error") {
               try {
-                const data = JSON.parse(line.slice(6)) as ChatMessage;
-                if (data.role === "assistant") {
-                  setMessages((prev) => [...prev, data]);
-                }
+                const errData = JSON.parse(dataStr);
+                setError(errData.message);
               } catch {
-                // Skip malformed JSON
+                setError("Unknown error");
               }
+              continue;
+            }
+
+            try {
+              const data = JSON.parse(dataStr) as ChatMessage;
+              if (data.role === "assistant" && data.content) {
+                setMessages((prev) => [...prev, data]);
+              }
+            } catch {
+              // Skip malformed JSON
             }
           }
         }
