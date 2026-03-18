@@ -169,36 +169,9 @@ export class CopilotService {
 
     yield { type: "user_message", data: JSON.stringify(userMsg) };
 
-    let fullContent = "";
-
-    const contentPromise = new Promise<string>((resolve, reject) => {
-      const chunks: string[] = [];
-
-      managed.session.on("assistant.message_delta", (event) => {
-        const delta = event.data?.deltaContent ?? "";
-        if (delta) {
-          chunks.push(delta);
-        }
-      });
-
-      managed.session.on("assistant.message", (event) => {
-        resolve(event.data?.content ?? chunks.join(""));
-      });
-
-      managed.session.on("session.idle", () => {
-        if (chunks.length > 0) {
-          resolve(chunks.join(""));
-        }
-      });
-
-      setTimeout(() => reject(new Error("Chat timeout")), 120_000);
-    });
-
-    // Send the prompt
-    await managed.session.send({ prompt });
-
-    // We need to collect streaming events - use a polling approach with the SDK events
-    fullContent = await contentPromise;
+    // Use sendAndWait which reliably returns content
+    const response = await managed.session.sendAndWait({ prompt });
+    const fullContent = response?.data?.content ?? "";
 
     const assistantMsg: ChatMessage = {
       id: uuidv4(),
