@@ -25,3 +25,17 @@ export function easyAuthMiddleware(req: Request, _res: Response, next: NextFunct
 
   next();
 }
+
+/**
+ * Require authentication on API routes.
+ * In production with EasyAuth AllowAnonymous mode, returns 401 if no
+ * X-MS-CLIENT-PRINCIPAL-ID header is present.
+ * In development (NODE_ENV !== "production"), allows "default" userId.
+ */
+export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  if (process.env.NODE_ENV === "production" && req.userId === "default") {
+    res.status(401).json({ error: { message: "Authentication required" } });
+    return;
+  }
+  next();
+}

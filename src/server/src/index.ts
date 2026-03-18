@@ -12,7 +12,7 @@ import { createChatRoutes } from "./routes/chat.routes.js";
 import { createSessionRoutes } from "./routes/sessions.routes.js";
 import { createWorkspaceRoutes } from "./routes/workspace.routes.js";
 import healthRoutes from "./routes/health.routes.js";
-import { easyAuthMiddleware } from "./middleware/auth.middleware.js";
+import { easyAuthMiddleware, requireAuth } from "./middleware/auth.middleware.js";
 import {
   errorHandler,
   notFoundHandler,
@@ -42,8 +42,17 @@ async function main() {
   app.use(express.json({ limit: "1mb" }));
   app.use(easyAuthMiddleware);
 
-  // Health routes (no auth needed — already behind EasyAuth)
+  // Health routes (no auth needed)
   app.use("/api", healthRoutes);
+
+  // /api/me — returns user identity (also works unauthenticated for login check)
+  app.get("/api/me", (req, res) => {
+    if (req.userId === "default" && config.isProduction) {
+      res.status(401).json({ error: { message: "Not authenticated" } });
+      return;
+    }
+    res.json({ userId: req.userId, userName: req.userName });
+  });
 
   // Initialize services (non-blocking — server listens immediately)
   const copilot = new CopilotService(config);
@@ -53,6 +62,9 @@ async function main() {
 
   // Wire user MCP loader into copilot service
   copilot.setUserMcpLoader((userId) => userMcp.getUserServers(userId));
+
+  // Require auth for all remaining API routes in production
+  app.use("/api", requireAuth);
 
   // API routes (registered before init completes — routes guard on client readiness)
   app.use("/api/sessions", createSessionRoutes(copilot, workspace));
@@ -104,11 +116,6 @@ async function main() {
     } else {
       res.status(404).json({ error: { message: `Server "${req.params.name}" not found` } });
     }
-  });
-
-  // User identity endpoint (for frontend header)
-  app.get("/api/me", (req, res) => {
-    res.json({ userId: req.userId, userName: req.userName });
   });
 
   // Models endpoint — list deployed models from Azure OpenAI via ARM API
