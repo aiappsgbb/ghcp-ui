@@ -17,17 +17,17 @@ export default function App() {
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>("");
 
-  // Fetch user identity from EasyAuth — redirect to login if unauthenticated
+  // Fetch user identity from EasyAuth
   useEffect(() => {
     fetch("/api/me")
-      .then((r) => {
-        if (r.status === 401 || r.status === 403) {
-          window.location.href = "/.auth/login/aad?post_login_redirect_uri=" + encodeURIComponent(window.location.pathname);
-          return null;
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.userName) setUserName(data.userName);
+        if (data?.authenticated === false && data?.loginUrl) {
+          // Not authenticated — redirect to EasyAuth login
+          window.location.href = data.loginUrl;
         }
-        return r.ok ? r.json() : null;
       })
-      .then((data) => { if (data?.userName) setUserName(data.userName); })
       .catch(() => {});
   }, []);
 

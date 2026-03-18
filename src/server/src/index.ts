@@ -45,13 +45,15 @@ async function main() {
   // Health routes (no auth needed)
   app.use("/api", healthRoutes);
 
-  // /api/me — returns user identity (also works unauthenticated for login check)
+  // /api/me — returns user identity (no auth enforcement — diagnostic)
   app.get("/api/me", (req, res) => {
-    if (req.userId === "default" && config.isProduction) {
-      res.status(401).json({ error: { message: "Not authenticated" } });
-      return;
-    }
-    res.json({ userId: req.userId, userName: req.userName });
+    console.log(`[auth-debug] /api/me — principalId=${req.headers["x-ms-client-principal-id"] ?? "NONE"}, userId=${req.userId}`);
+    res.json({
+      userId: req.userId,
+      userName: req.userName,
+      authenticated: req.userId !== "default",
+      loginUrl: "/.auth/login/aad?post_login_redirect_uri=" + encodeURIComponent("/"),
+    });
   });
 
   // Initialize services (non-blocking — server listens immediately)
@@ -63,10 +65,7 @@ async function main() {
   // Wire user MCP loader into copilot service
   copilot.setUserMcpLoader((userId) => userMcp.getUserServers(userId));
 
-  // Require auth for all remaining API routes in production
-  app.use("/api", requireAuth);
-
-  // API routes (registered before init completes — routes guard on client readiness)
+  // API routes — no auth enforcement for now (diagnostic)
   app.use("/api/sessions", createSessionRoutes(copilot, workspace));
   app.use("/api/chat", createChatRoutes(copilot));
   app.use("/api/workspace", createWorkspaceRoutes(workspace));
