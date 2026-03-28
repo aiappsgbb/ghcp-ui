@@ -2,6 +2,22 @@ import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "re
 import { Send, Square, Loader2, Mic, MicOff } from "lucide-react";
 import { useSpeechToText } from "../hooks/useSpeechToText";
 
+const VOICE_LANGUAGES = [
+  { code: "en-US", label: "EN" },
+  { code: "it-IT", label: "IT" },
+  { code: "es-ES", label: "ES" },
+  { code: "fr-FR", label: "FR" },
+  { code: "de-DE", label: "DE" },
+  { code: "pt-BR", label: "PT" },
+  { code: "ja-JP", label: "JA" },
+  { code: "zh-CN", label: "ZH" },
+] as const;
+
+function getSavedVoiceLang(): string {
+  try { return localStorage.getItem("ghcp-voice-lang") ?? "en-US"; }
+  catch { return "en-US"; }
+}
+
 interface InputBarProps {
   onSend: (message: string) => void;
   onStop: () => void;
@@ -11,7 +27,10 @@ interface InputBarProps {
 
 export function InputBar({ onSend, onStop, isLoading, disabled }: InputBarProps) {
   const [input, setInput] = useState("");
+  const [voiceLang, setVoiceLang] = useState(getSavedVoiceLang);
+  const [showLangPicker, setShowLangPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const langPickerRef = useRef<HTMLDivElement>(null);
 
   const handleSttResult = useCallback((transcript: string) => {
     setInput(transcript);
@@ -24,7 +43,25 @@ export function InputBar({ onSend, onStop, isLoading, disabled }: InputBarProps)
     toggleListening,
     stopListening,
     error: sttError,
-  } = useSpeechToText({ onResult: handleSttResult });
+  } = useSpeechToText({ lang: voiceLang, onResult: handleSttResult });
+
+  const handleLangChange = useCallback((code: string) => {
+    setVoiceLang(code);
+    setShowLangPicker(false);
+    try { localStorage.setItem("ghcp-voice-lang", code); } catch { /* noop */ }
+  }, []);
+
+  // Close lang picker on outside click
+  useEffect(() => {
+    if (!showLangPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (langPickerRef.current && !langPickerRef.current.contains(e.target as Node)) {
+        setShowLangPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showLangPicker]);
 
   useEffect(() => {
     if (!isLoading && textareaRef.current) {
@@ -97,24 +134,56 @@ export function InputBar({ onSend, onStop, isLoading, disabled }: InputBarProps)
             className="flex-1 bg-transparent resize-none text-sm sm:text-base text-zinc-100 placeholder-zinc-600 outline-none py-1.5 max-h-[200px]"
           />
 
-          {/* Mic button — only shown if browser supports Web Speech API */}
+          {/* Voice input: language picker + mic button */}
           {sttSupported && !isLoading && (
-            <button
-              onClick={toggleListening}
-              disabled={disabled}
-              className={`p-2.5 rounded-lg transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center ${
-                isListening
-                  ? "bg-red-600/20 text-red-400 hover:bg-red-600/30 animate-pulse"
-                  : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 disabled:text-zinc-700"
-              }`}
-              title={isListening ? "Stop listening" : "Voice input"}
-            >
-              {isListening ? (
-                <MicOff className="w-4 h-4" />
-              ) : (
-                <Mic className="w-4 h-4" />
+            <div className="flex items-center gap-0.5 relative" ref={langPickerRef}>
+              {/* Language picker toggle */}
+              <button
+                onClick={() => setShowLangPicker((v) => !v)}
+                disabled={disabled}
+                className="px-1.5 py-1 rounded-md text-[10px] font-medium text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors disabled:text-zinc-700"
+                title="Voice language"
+              >
+                {VOICE_LANGUAGES.find((l) => l.code === voiceLang)?.label ?? "EN"}
+              </button>
+
+              {/* Language dropdown */}
+              {showLangPicker && (
+                <div className="absolute bottom-full right-0 mb-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 z-50 min-w-[100px]">
+                  {VOICE_LANGUAGES.map((l) => (
+                    <button
+                      key={l.code}
+                      onClick={() => handleLangChange(l.code)}
+                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                        l.code === voiceLang
+                          ? "text-brand-400 bg-zinc-700/50"
+                          : "text-zinc-300 hover:bg-zinc-700"
+                      }`}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
               )}
-            </button>
+
+              {/* Mic button */}
+              <button
+                onClick={toggleListening}
+                disabled={disabled}
+                className={`p-2.5 rounded-lg transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center ${
+                  isListening
+                    ? "bg-red-600/20 text-red-400 hover:bg-red-600/30 animate-pulse"
+                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 disabled:text-zinc-700"
+                }`}
+                title={isListening ? "Stop listening" : "Voice input"}
+              >
+                {isListening ? (
+                  <MicOff className="w-4 h-4" />
+                ) : (
+                  <Mic className="w-4 h-4" />
+                )}
+              </button>
+            </div>
           )}
 
           {isLoading ? (

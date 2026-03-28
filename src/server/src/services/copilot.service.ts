@@ -237,6 +237,9 @@ export class CopilotService {
 
     const sessionId = uuidv4();
     const selectedModel = model ?? this.config.azure.foundryModel;
+    const mcpConfig = this.buildMcpServers(userId, workingDirectory, mcpServers);
+
+    console.log(`[CopilotService] createSession model=${selectedModel} mcp=${mcpConfig ? Object.keys(mcpConfig).join(",") : "none"} byok=${!!this.providerConfig}`);
 
     const session = await this.client.createSession({
       sessionId,
@@ -244,7 +247,7 @@ export class CopilotService {
       configDir: this.userConfigDir(userId),
       onPermissionRequest: approveAll,
       workingDirectory,
-      mcpServers: this.buildMcpServers(userId, workingDirectory, mcpServers),
+      mcpServers: mcpConfig,
       provider: this.providerConfig,
     });
 
