@@ -12,25 +12,19 @@ import { createWorkspaceRoutes } from "./routes/workspace.routes.js";
 import healthRoutes from "./routes/health.routes.js";
 import { easyAuthMiddleware } from "./middleware/auth.middleware.js";
 
-// Application Insights — optional, loaded at runtime if available
-(async () => {
-  const connStr = process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
-  if (!connStr) return;
-  try {
-    // @ts-ignore — applicationinsights is an optional runtime dependency
-    const ai = await import("applicationinsights");
-    ai.setup(connStr)
-      .setAutoCollectRequests(true)
-      .setAutoCollectPerformance(true, false)
-      .setAutoCollectExceptions(true)
-      .setAutoCollectDependencies(true)
-      .setAutoCollectConsole(false)
-      .start();
-    console.log("[AppInsights] Telemetry enabled");
-  } catch {
-    console.warn("[AppInsights] Package not available, skipping telemetry");
-  }
-})();
+// Application Insights — must be initialized before other imports
+const aiConnStr = process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
+if (aiConnStr) {
+  const appInsights = await import("applicationinsights");
+  appInsights.setup(aiConnStr)
+    .setAutoCollectRequests(true)
+    .setAutoCollectPerformance(true, true)
+    .setAutoCollectExceptions(true)
+    .setAutoCollectDependencies(true)
+    .setAutoCollectConsole(true, true)
+    .start();
+  console.log("[AppInsights] Telemetry enabled");
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,7 +32,7 @@ async function main() {
   const config = loadConfig();
   const app = express();
 
-  // Middleware
+  // Minimal middleware
   app.use(morgan(config.isProduction ? "combined" : "dev"));
   app.use(express.json({ limit: "1mb" }));
   app.use(easyAuthMiddleware);
@@ -190,16 +184,12 @@ async function main() {
     }
   });
 
-  // Serve static frontend in production with long-lived cache (Vite hashes filenames)
+  // Serve static frontend in production (Vite hashes filenames → long-lived cache)
   if (config.isProduction) {
     const clientDist = path.resolve(__dirname, "../../client/dist");
-    app.use(express.static(clientDist, {
-      maxAge: "1y",
-      immutable: true,
-    }));
+    app.use(express.static(clientDist, { maxAge: "1y", immutable: true }));
     app.use((_req, res, next) => {
       if (_req.path.startsWith("/api")) return next();
-      // index.html must not be cached — it contains hashed asset references
       res.set("Cache-Control", "no-cache");
       res.sendFile(path.join(clientDist, "index.html"));
     });
