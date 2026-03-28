@@ -234,25 +234,56 @@ export class CopilotService {
     const meta = this.readMeta(userId, sessionId);
     const model = meta?.model ?? this.config.azure.foundryModel;
 
-    const session = await this.client.resumeSession(sessionId, {
-      configDir: this.userConfigDir(userId),
-      onPermissionRequest: approveAll,
-      mcpServers: this.buildMcpServers(userId),
-      provider: this.providerConfig,
-      model,
-    });
+    try {
+      const session = await this.client.resumeSession(sessionId, {
+        configDir: this.userConfigDir(userId),
+        onPermissionRequest: approveAll,
+        mcpServers: this.buildMcpServers(userId),
+        provider: this.providerConfig,
+        model,
+      });
 
-    const createdAt = meta?.createdAt ? new Date(meta.createdAt) : new Date();
-    this.sessions.set(sessionId, { session, model, createdAt, userId });
+      const createdAt = meta?.createdAt ? new Date(meta.createdAt) : new Date();
+      this.sessions.set(sessionId, { session, model, createdAt, userId });
 
-    return {
-      id: sessionId,
-      createdAt: createdAt.toISOString(),
-      model,
-      title: meta?.title,
-      messageCount: 0,
-      active: true,
-    };
+      return {
+        id: sessionId,
+        createdAt: createdAt.toISOString(),
+        model,
+        title: meta?.title,
+        messageCount: 0,
+        active: true,
+      };
+    } catch (err) {
+      // After container restart the SDK's internal registry is empty.
+      // Fall back to creating a new session with the same configDir —
+      // the SDK picks up existing session state from disk.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("Session not found") || msg.includes("not found")) {
+        console.warn(`[CopilotService] Resume failed for ${sessionId}, re-creating with same configDir`);
+        const session = await this.client.createSession({
+          sessionId,
+          model,
+          configDir: this.userConfigDir(userId),
+          onPermissionRequest: approveAll,
+          mcpServers: this.buildMcpServers(userId),
+          provider: this.providerConfig,
+        });
+
+        const createdAt = meta?.createdAt ? new Date(meta.createdAt) : new Date();
+        this.sessions.set(sessionId, { session, model, createdAt, userId });
+
+        return {
+          id: sessionId,
+          createdAt: createdAt.toISOString(),
+          model,
+          title: meta?.title,
+          messageCount: 0,
+          active: true,
+        };
+      }
+      throw err;
+    }
   }
 
   /** Scan user's session-meta directory for sidecar metadata files */
