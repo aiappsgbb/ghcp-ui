@@ -13,12 +13,13 @@ import { createWorkspaceRoutes } from "./routes/workspace.routes.js";
 import healthRoutes from "./routes/health.routes.js";
 import { easyAuthMiddleware } from "./middleware/auth.middleware.js";
 
-// Application Insights — non-blocking init
-const aiConnStr = process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
-if (aiConnStr) {
+// Application Insights — lazy init, non-blocking
+(async () => {
+  const connStr = process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
+  if (!connStr) return;
   try {
-    const appInsights = await import("applicationinsights");
-    appInsights.setup(aiConnStr)
+    const ai = await import("applicationinsights");
+    ai.setup(connStr)
       .setAutoCollectRequests(true)
       .setAutoCollectPerformance(true, false)
       .setAutoCollectExceptions(true)
@@ -27,9 +28,9 @@ if (aiConnStr) {
       .start();
     console.log("[AppInsights] Telemetry enabled");
   } catch (err) {
-    console.warn("[AppInsights] Failed to initialize:", err);
+    console.warn("[AppInsights] Skipped —", (err as Error).message);
   }
-}
+})();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
