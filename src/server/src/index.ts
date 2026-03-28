@@ -1,7 +1,6 @@
 import express from "express";
 import morgan from "morgan";
 import compression from "compression";
-import helmet from "helmet";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
@@ -34,8 +33,7 @@ async function main() {
   const config = loadConfig();
   const app = express();
 
-  // Security & compression
-  app.use(helmet({ contentSecurityPolicy: false }));
+  // Compression & middleware
   app.use(compression());
   app.use(morgan(config.isProduction ? "combined" : "dev"));
   app.use(express.json({ limit: "1mb" }));

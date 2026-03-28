@@ -46,7 +46,7 @@ ENV PORT=8080
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
   CMD wget -qO- http://localhost:8080/api/healthz || exit 1
 
 CMD ["node", "src/server/dist/index.js"]
