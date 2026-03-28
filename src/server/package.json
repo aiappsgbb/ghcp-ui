@@ -14,7 +14,6 @@
     "@azure/identity": "^4.13.0",
     "@azure/storage-blob": "^12.31.0",
     "@github/copilot-sdk": "^0.1.29",
-    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "helmet": "^8.1.0",
@@ -23,7 +22,6 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.2",
     "@types/morgan": "^1.9.9",
