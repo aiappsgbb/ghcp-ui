@@ -87,6 +87,43 @@ export class CopilotService {
     return join(base, userId, ".copilot", "session-meta");
   }
 
+  /** Path to persistent message history file (Azure Files — survives restarts) */
+  private messagesPath(userId: string, sessionId: string): string {
+    const base = this.config.workspaceMountPath || this.config.sessionStatePath || "/tmp/ghcp-sessions";
+    const dir = join(base, userId, ".copilot", "session-messages");
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    return join(dir, `${sessionId}.json`);
+  }
+
+  /** Append messages to persistent storage on Azure Files */
+  private appendMessages(userId: string, sessionId: string, msgs: ChatMessage[]): void {
+    if (msgs.length === 0) return;
+    try {
+      const filePath = this.messagesPath(userId, sessionId);
+      let existing: ChatMessage[] = [];
+      if (existsSync(filePath)) {
+        try {
+          existing = JSON.parse(readFileSync(filePath, "utf-8"));
+        } catch { /* corrupted file — start fresh */ }
+      }
+      existing.push(...msgs);
+      writeFileSync(filePath, JSON.stringify(existing));
+    } catch (err) {
+      console.warn(`[CopilotService] Failed to persist messages for ${sessionId}:`, err);
+    }
+  }
+
+  /** Read persisted messages from Azure Files */
+  private readPersistedMessages(userId: string, sessionId: string): ChatMessage[] {
+    try {
+      const filePath = this.messagesPath(userId, sessionId);
+      if (!existsSync(filePath)) return [];
+      return JSON.parse(readFileSync(filePath, "utf-8"));
+    } catch {
+      return [];
+    }
+  }
+
   private writeMeta(userId: string, sessionId: string, meta: SessionMeta): void {
     try {
       writeFileSync(this.metaPath(userId, sessionId), JSON.stringify(meta));
@@ -354,12 +391,13 @@ export class CopilotService {
     for (const [sessionId, meta] of diskMeta) {
       if (seen.has(sessionId)) continue;
       seen.add(sessionId);
+      const msgs = this.readPersistedMessages(userId, sessionId);
       results.push({
         id: sessionId,
         createdAt: meta.createdAt ?? new Date().toISOString(),
         model: meta.model ?? this.config.azure.foundryModel,
         title: meta.title,
-        messageCount: 0,
+        messageCount: msgs.length,
         active: this.sessions.has(sessionId),
       });
     }
@@ -382,11 +420,12 @@ export class CopilotService {
     return results;
   }
 
-  /** Get session messages — uses SDK getMessages() for full history from disk */
+  /** Get session messages — tries SDK first, falls back to persisted messages on Azure Files */
   async getSessionMessages(sessionId: string): Promise<ChatMessage[]> {
     const managed = this.sessions.get(sessionId);
     if (!managed) throw new Error(`Session ${sessionId} not active. Resume it first.`);
 
+    // Try SDK's SQLite-backed history first (available when session hasn't been restarted)
     try {
       const events = await managed.session.getMessages();
       const messages: ChatMessage[] = [];
@@ -410,11 +449,17 @@ export class CopilotService {
         }
       }
 
-      return messages;
+      if (messages.length > 0) return messages;
     } catch (err) {
-      console.warn(`[CopilotService] Failed to get messages for ${sessionId}:`, err);
-      return [];
+      console.warn(`[CopilotService] SDK getMessages failed for ${sessionId}:`, err);
     }
+
+    // Fallback: read from our persisted messages on Azure Files
+    const persisted = this.readPersistedMessages(managed.userId, sessionId);
+    if (persisted.length > 0) {
+      console.log(`[CopilotService] Loaded ${persisted.length} persisted messages for ${sessionId}`);
+    }
+    return persisted;
   }
 
   /** Rename a session */
@@ -583,6 +628,9 @@ export class CopilotService {
       type: "assistant_message",
       data: JSON.stringify(assistantMsg),
     };
+
+    // Persist user + assistant messages to Azure Files for cross-restart recovery
+    this.appendMessages(managed.userId, sessionId, [userMsg, assistantMsg]);
   }
 
   async sendAndWait(
