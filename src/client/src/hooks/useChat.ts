@@ -114,6 +114,17 @@ export function useChat() {
       let reasoning = "";
       let accumulatedContent = "";
       let receivedAssistantMessage = false;
+      let toolUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const flushToolUpdates = () => {
+        toolUpdateTimer = null;
+        setActiveTools([...toolEvents]);
+      };
+      const scheduleToolUpdate = () => {
+        if (!toolUpdateTimer) {
+          toolUpdateTimer = setTimeout(flushToolUpdates, 50);
+        }
+      };
 
       try {
         const res = await fetch(`${API_BASE}/chat/${currentSession.id}`, {
@@ -177,7 +188,7 @@ export function useChat() {
                     timestamp: new Date().toISOString(),
                   };
                   toolEvents.push(evt);
-                  setActiveTools([...toolEvents]);
+                  scheduleToolUpdate();
                   break;
                 }
 
@@ -189,7 +200,7 @@ export function useChat() {
                     timestamp: new Date().toISOString(),
                   };
                   toolEvents.push(evt);
-                  setActiveTools([...toolEvents]);
+                  scheduleToolUpdate();
                   break;
                 }
 
@@ -203,7 +214,7 @@ export function useChat() {
                     timestamp: new Date().toISOString(),
                   };
                   toolEvents.push(evt);
-                  setActiveTools([...toolEvents]);
+                  scheduleToolUpdate();
                   break;
                 }
 
@@ -215,7 +226,7 @@ export function useChat() {
                     timestamp: new Date().toISOString(),
                   };
                   toolEvents.push(evt);
-                  setActiveTools([...toolEvents]);
+                  scheduleToolUpdate();
                   break;
                 }
 
@@ -228,7 +239,7 @@ export function useChat() {
                     timestamp: new Date().toISOString(),
                   };
                   toolEvents.push(evt);
-                  setActiveTools([...toolEvents]);
+                  scheduleToolUpdate();
                   break;
                 }
 
@@ -239,7 +250,7 @@ export function useChat() {
                     timestamp: new Date().toISOString(),
                   };
                   toolEvents.push(evt);
-                  setActiveTools([...toolEvents]);
+                  scheduleToolUpdate();
                   break;
                 }
 
@@ -288,6 +299,7 @@ export function useChat() {
           err instanceof Error ? err.message : "Failed to send message";
         setError(msg);
       } finally {
+        if (toolUpdateTimer) clearTimeout(toolUpdateTimer);
         setIsLoading(false);
         // If we accumulated content but never received assistant_message,
         // save it as the assistant response to avoid losing content

@@ -18,6 +18,15 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
-    sourcemap: true,
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "react-vendor": ["react", "react-dom"],
+          "markdown": ["react-markdown", "remark-gfm"],
+          "icons": ["lucide-react"],
+        },
+      },
+    },
   },
 });

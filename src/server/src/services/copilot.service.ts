@@ -552,6 +552,11 @@ export class CopilotService {
       }
     } finally {
       clearTimeout(timeout);
+      // Remove event listener to prevent memory leak
+      // CopilotSession may not expose .off() — use removeListener if available
+      try {
+        (managed.session as unknown as { removeListener?: (h: SessionEventHandler) => void }).removeListener?.(handler as SessionEventHandler);
+      } catch { /* best effort cleanup */ }
     }
 
     // Guarantee content: fallback to accumulated deltas if SDK didn't send assistant.message

@@ -1,5 +1,7 @@
 import express from "express";
 import morgan from "morgan";
+import compression from "compression";
+import helmet from "helmet";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
@@ -21,7 +23,7 @@ if (aiConnStr) {
     .setAutoCollectPerformance(true, true)
     .setAutoCollectExceptions(true)
     .setAutoCollectDependencies(true)
-    .setAutoCollectConsole(true, true)
+    .setAutoCollectConsole(false)
     .start();
   console.log("[AppInsights] Telemetry enabled");
 }
@@ -32,7 +34,9 @@ async function main() {
   const config = loadConfig();
   const app = express();
 
-  // Minimal middleware
+  // Security & compression
+  app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(compression());
   app.use(morgan(config.isProduction ? "combined" : "dev"));
   app.use(express.json({ limit: "1mb" }));
   app.use(easyAuthMiddleware);
@@ -104,9 +108,18 @@ async function main() {
     }
   });
 
-  // Models endpoint — list deployed models from Azure OpenAI via ARM API
+  // Models endpoint — cached, list deployed models from Azure OpenAI via ARM API
+  let modelsCache: { data: unknown; expiry: number } | null = null;
+  const MODELS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
   app.get("/api/models", async (_req, res) => {
     const fallback = { models: [{ id: config.azure.foundryModel, label: config.azure.foundryModel }], default: config.azure.foundryModel };
+
+    if (modelsCache && Date.now() < modelsCache.expiry) {
+      res.json(modelsCache.data);
+      return;
+    }
+
     try {
       const { openAiResourceName, openAiResourceGroup, subscriptionId } = config.azure;
       if (!openAiResourceName || !openAiResourceGroup || !subscriptionId) {
@@ -166,19 +179,26 @@ async function main() {
         })
         .map((d) => ({ id: d.name, label: d.properties.model.name }))
         .sort((a, b) => a.label.localeCompare(b.label));
-      res.json({ models: chatModels.length > 0 ? chatModels : fallback.models, default: config.azure.foundryModel });
+      const result = { models: chatModels.length > 0 ? chatModels : fallback.models, default: config.azure.foundryModel };
+      modelsCache = { data: result, expiry: Date.now() + MODELS_CACHE_TTL };
+      res.json(result);
     } catch (err) {
       console.warn("[Models] Error listing models:", err);
       res.json(fallback);
     }
   });
 
-  // Serve static frontend in production
+  // Serve static frontend in production with long-lived cache (Vite hashes filenames)
   if (config.isProduction) {
     const clientDist = path.resolve(__dirname, "../../client/dist");
-    app.use(express.static(clientDist));
+    app.use(express.static(clientDist, {
+      maxAge: "1y",
+      immutable: true,
+    }));
     app.use((_req, res, next) => {
       if (_req.path.startsWith("/api")) return next();
+      // index.html must not be cached — it contains hashed asset references
+      res.set("Cache-Control", "no-cache");
       res.sendFile(path.join(clientDist, "index.html"));
     });
   }
