@@ -99,6 +99,11 @@ export default function App() {
     [removeSession, currentSession, setCurrentSession]
   );
 
+  const handleChangeModel = useCallback(async (model: string) => {
+    setSettingsOpen(false);
+    await handleNewSession(model);
+  }, [handleNewSession]);
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <Header
@@ -159,6 +164,7 @@ export default function App() {
         mcpServers={mcpServers}
         onUpdateMcpServers={setMcpServers}
         currentModel={currentSession?.model ?? ""}
+        onChangeModel={handleChangeModel}
         workspacePath={activeFolder || null}
       />
 

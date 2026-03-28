@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { X, Server, Plus, Trash2, Globe, Shield, Save, Loader2 } from "lucide-react";
+import { X, Server, Plus, Trash2, Globe, Shield, Save, Loader2, ChevronDown } from "lucide-react";
 
 export interface McpServerEntry {
   name: string;
@@ -29,6 +29,7 @@ interface SettingsDrawerProps {
   mcpServers: McpServerEntry[];
   onUpdateMcpServers: (servers: McpServerEntry[]) => void;
   currentModel: string;
+  onChangeModel: (model: string) => void;
   workspacePath: string | null;
 }
 
@@ -36,7 +37,7 @@ export function SettingsDrawer({
   isOpen,
   onClose,
   currentModel,
-  workspacePath,
+  onChangeModel,
 }: SettingsDrawerProps) {
   const [newServerName, setNewServerName] = useState("");
   const [newServerUrl, setNewServerUrl] = useState("");
@@ -45,6 +46,7 @@ export function SettingsDrawer({
   const [globalServers, setGlobalServers] = useState<GlobalMcpServer[]>([]);
   const [userServers, setUserServers] = useState<UserMcpServer[]>([]);
   const [saving, setSaving] = useState(false);
+  const [availableModels, setAvailableModels] = useState<{ id: string; label: string }[]>([]);
 
   const fetchServers = useCallback(() => {
     if (!isOpen) return;
@@ -55,6 +57,10 @@ export function SettingsDrawer({
     fetch("/api/mcp-servers/user")
       .then((r) => r.json())
       .then((data) => setUserServers(data.servers ?? []))
+      .catch(() => {});
+    fetch("/api/models")
+      .then((r) => r.json())
+      .then((data) => setAvailableModels(data.models ?? []))
       .catch(() => {});
   }, [isOpen]);
 
@@ -130,18 +136,27 @@ export function SettingsDrawer({
         <div className="flex-1 px-5 py-4 space-y-6">
           {/* Current session info */}
           <section>
-            <h3 className="text-sm font-medium text-zinc-400 mb-3">Current Session</h3>
+            <h3 className="text-sm font-medium text-zinc-400 mb-3">Model</h3>
             <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-500">Model</span>
-                <span className="text-zinc-200 font-mono">{currentModel || "—"}</span>
+              <div className="relative">
+                <select
+                  value={currentModel || ""}
+                  onChange={(e) => onChangeModel(e.target.value)}
+                  className="w-full appearance-none px-3 py-2.5 pr-8 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 font-mono outline-none focus:border-brand-500 cursor-pointer"
+                >
+                  {!currentModel && <option value="">No session</option>}
+                  {availableModels.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                  {currentModel && !availableModels.find((m) => m.id === currentModel) && (
+                    <option value={currentModel}>{currentModel}</option>
+                  )}
+                </select>
+                <ChevronDown className="w-4 h-4 text-zinc-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-500">Workspace</span>
-                <span className="text-zinc-200 font-mono text-xs truncate max-w-[200px]">
-                  {workspacePath || "Default"}
-                </span>
-              </div>
+              <p className="text-xs text-zinc-600">
+                Changing model starts a new chat session.
+              </p>
             </div>
           </section>
 
