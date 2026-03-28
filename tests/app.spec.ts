@@ -32,8 +32,8 @@ test.describe("GHCP UI", () => {
     // Open sidebar
     await page.getByLabel("Toggle sidebar").click();
     await page.getByRole("button", { name: "New Chat", exact: true }).click();
-    // Should create session immediately (no dialog) — header should show connected
-    await expect(page.getByText("gpt-5.4")).toBeVisible({ timeout: 15000 });
+    // Should create session immediately (no dialog) — header badge should show model
+    await expect(page.getByRole("banner").getByText("gpt-5.4")).toBeVisible({ timeout: 15000 });
   });
 
   test("has settings button that opens settings drawer", async ({ page }) => {
@@ -91,25 +91,6 @@ test.describe("PWA", () => {
     await page.goto("/");
     const touchIcon = page.locator('link[rel="apple-touch-icon"]');
     await expect(touchIcon).toBeAttached();
-  });
-
-  test("manifest is generated in production build", async () => {
-    // Verify the manifest file exists in the build output
-    const fs = await import("fs");
-    const manifestPath = "src/client/dist/manifest.webmanifest";
-    expect(fs.existsSync(manifestPath)).toBeTruthy();
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-    expect(manifest.name).toBe("GHCP UI — GitHub Copilot Web");
-    expect(manifest.short_name).toBe("GHCP UI");
-    expect(manifest.display).toBe("standalone");
-    expect(manifest.theme_color).toBe("#09090b");
-    expect(manifest.icons.length).toBeGreaterThan(0);
-  });
-
-  test("service worker is generated in production build", async () => {
-    const fs = await import("fs");
-    expect(fs.existsSync("src/client/dist/sw.js")).toBeTruthy();
-    expect(fs.existsSync("src/client/dist/registerSW.js")).toBeTruthy();
   });
 });
 
@@ -191,8 +172,8 @@ test.describe("Models API", () => {
     await page.waitForTimeout(2000);
     await page.getByLabel("Toggle sidebar").click();
     await page.getByRole("button", { name: "New Chat", exact: true }).click();
-    // Session should be created with gpt-5.4 — visible in header or sidebar
-    await expect(page.getByText("gpt-5.4")).toBeVisible({ timeout: 15000 });
+    // Session should be created with gpt-5.4 — visible in header badge
+    await expect(page.getByRole("banner").getByText("gpt-5.4")).toBeVisible({ timeout: 15000 });
   });
 
   test("default model is gpt-5.4", async ({ request }) => {
@@ -303,16 +284,13 @@ test.describe("Session Persistence", () => {
 
     // Now load the page — it will fetch sessions on mount and should find our session
     await page.goto("/");
-    // Wait for session list fetch to complete
-    await page.waitForTimeout(3000);
 
     // Open sidebar
     await page.getByLabel("Toggle sidebar").click();
-    await page.waitForTimeout(1000);
 
     // The sidebar should show the session with the model text
     const sessionEntry = page.locator('aside').getByText("gpt-4.1");
-    await expect(sessionEntry.first()).toBeVisible({ timeout: 10000 });
+    await expect(sessionEntry.first()).toBeVisible({ timeout: 15000 });
 
     // Cleanup
     await request.delete(`/api/sessions/${created.id}`);

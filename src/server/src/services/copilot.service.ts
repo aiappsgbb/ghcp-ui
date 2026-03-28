@@ -7,7 +7,7 @@ import {
   type SessionMetadata,
 } from "@github/copilot-sdk";
 import { v4 as uuidv4 } from "uuid";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from "fs";
 import { join } from "path";
 import type { AppConfig } from "../config.js";
 
@@ -255,10 +255,31 @@ export class CopilotService {
     };
   }
 
-  /** List sessions for a specific user: active in-memory + persisted on disk (merged, deduped) */
+  /** Scan user's session-meta directory for sidecar metadata files */
+  private listDiskMeta(userId: string): Map<string, SessionMeta> {
+    const metaDir = join(this.userConfigDir(userId), "session-meta");
+    const result = new Map<string, SessionMeta>();
+    try {
+      if (!existsSync(metaDir)) return result;
+      for (const f of readdirSync(metaDir)) {
+        if (!f.endsWith(".json")) continue;
+        const sessionId = f.replace(".json", "");
+        const meta = this.readMeta(userId, sessionId);
+        if (meta && (!meta.userId || meta.userId === userId)) {
+          result.set(sessionId, meta);
+        }
+      }
+    } catch (err) {
+      console.warn("[CopilotService] Failed to scan session-meta directory:", err);
+    }
+    return result;
+  }
+
+  /** List sessions for a specific user: SDK + disk metadata + in-memory (merged, deduped) */
   async listSessions(userId: string): Promise<SessionInfo[]> {
     if (!this.client) return [];
 
+    // Source 1: SDK's persisted session list
     let persisted: SessionMetadata[] = [];
     try {
       persisted = await this.client.listSessions();
@@ -266,17 +287,18 @@ export class CopilotService {
       console.warn("[CopilotService] Failed to list persisted sessions:", err);
     }
 
+    // Source 2: Disk scan of user's session-meta directory (survives container restarts)
+    const diskMeta = this.listDiskMeta(userId);
+
     const seen = new Set<string>();
     const results: SessionInfo[] = [];
 
-    // Start with persisted sessions from SDK — filter to this user
+    // Merge SDK sessions (enriched with disk metadata)
     for (const s of persisted) {
-      const meta = this.readMeta(userId, s.sessionId);
-      // Only include sessions belonging to this user (or with no userId = legacy)
+      const meta = diskMeta.get(s.sessionId) ?? this.readMeta(userId, s.sessionId);
       if (meta && meta.userId && meta.userId !== userId) continue;
 
       seen.add(s.sessionId);
-      const isActive = this.sessions.has(s.sessionId);
       results.push({
         id: s.sessionId,
         createdAt: s.startTime?.toISOString?.() ?? meta?.createdAt ?? new Date().toISOString(),
@@ -285,11 +307,25 @@ export class CopilotService {
         title: meta?.title,
         summary: s.summary,
         messageCount: 0,
-        active: isActive,
+        active: this.sessions.has(s.sessionId),
       });
     }
 
-    // Add active in-memory sessions for this user not yet persisted to disk
+    // Disk-only sessions (not in SDK list — e.g., after container restart)
+    for (const [sessionId, meta] of diskMeta) {
+      if (seen.has(sessionId)) continue;
+      seen.add(sessionId);
+      results.push({
+        id: sessionId,
+        createdAt: meta.createdAt ?? new Date().toISOString(),
+        model: meta.model ?? this.config.azure.foundryModel,
+        title: meta.title,
+        messageCount: 0,
+        active: this.sessions.has(sessionId),
+      });
+    }
+
+    // In-memory active sessions not yet on disk
     for (const [id, managed] of this.sessions) {
       if (managed.userId !== userId) continue;
       if (seen.has(id)) continue;
@@ -483,6 +519,11 @@ export class CopilotService {
       }
     } finally {
       clearTimeout(timeout);
+    }
+
+    // Guarantee content: fallback to accumulated deltas if SDK didn't send assistant.message
+    if (!fullContent && deltaChunks.length > 0) {
+      fullContent = deltaChunks.join("");
     }
 
     const assistantMsg: ChatMessage = {

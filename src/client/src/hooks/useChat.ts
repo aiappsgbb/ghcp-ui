@@ -112,6 +112,7 @@ export function useChat() {
 
       const toolEvents: ToolEvent[] = [];
       let reasoning = "";
+      let accumulatedContent = "";
 
       try {
         const res = await fetch(`${API_BASE}/chat/${currentSession.id}`, {
@@ -246,6 +247,7 @@ export function useChat() {
                 }
 
                 case "message_delta": {
+                  accumulatedContent += data.content ?? "";
                   setStreamingContent(
                     (prev) => prev + (data.content ?? "")
                   );
@@ -255,6 +257,8 @@ export function useChat() {
                 case "assistant_message": {
                   const assistantMsg: ChatMessage = {
                     ...data,
+                    // Fallback: use accumulated deltas if server content is empty
+                    content: data.content || accumulatedContent || "",
                     toolEvents:
                       toolEvents.length > 0 ? [...toolEvents] : undefined,
                     reasoning: reasoning || undefined,
