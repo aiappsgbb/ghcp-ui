@@ -56,7 +56,7 @@ export function ChatContainer({
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-3xl lg:max-w-4xl mx-auto">
         {messages.length === 0 && !isLoading ? (
           <div className="flex items-center justify-center h-full py-20">
             <div className="text-center">

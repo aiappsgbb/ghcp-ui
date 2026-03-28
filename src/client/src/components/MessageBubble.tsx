@@ -94,9 +94,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           </span>
         </div>
 
-        <div className="prose-chat text-sm leading-relaxed text-zinc-200">
+        <div className="prose-chat text-sm leading-relaxed text-zinc-200 break-words">
           {isUser ? (
-            <p className="whitespace-pre-wrap">{message.content}</p>
+            <p className="whitespace-pre-wrap break-words">{message.content}</p>
           ) : (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
@@ -113,8 +113,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                     </a>
                   );
                 },
-                code({ className, children, ...props }) {
-                  const isBlock = className?.startsWith("language-");
+                code({ className, children, node, ...props }) {
+                  // Detect block code: has language class OR parent is <pre>
+                  const isBlock = className?.startsWith("language-") ||
+                    node?.position?.start.line !== node?.position?.end.line;
                   if (isBlock) {
                     return <CodeBlock className={className}>{children}</CodeBlock>;
                   }

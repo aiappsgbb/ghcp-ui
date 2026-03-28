@@ -612,9 +612,10 @@ export class CopilotService {
     await managed.session.send({ prompt });
 
     const timeout = setTimeout(() => {
+      console.warn(`[CopilotService] streamChat timeout reached (600s) for ${sessionId}`);
       isDone = true;
       resolveWait?.();
-    }, 120_000);
+    }, 600_000);
 
     try {
       while (!isDone || eventQueue.length > 0) {
@@ -656,7 +657,13 @@ export class CopilotService {
     };
 
     // Persist user + assistant messages to Azure Files for cross-restart recovery
-    this.appendMessages(managed.userId, sessionId, [userMsg, assistantMsg]);
+    // Skip empty assistant messages (timeout or SDK issue)
+    if (fullContent) {
+      this.appendMessages(managed.userId, sessionId, [userMsg, assistantMsg]);
+    } else {
+      console.warn(`[CopilotService] Empty assistant response for ${sessionId} — not persisting`);
+      this.appendMessages(managed.userId, sessionId, [userMsg]);
+    }
   }
 
   async sendAndWait(

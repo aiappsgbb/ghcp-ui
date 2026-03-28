@@ -132,7 +132,7 @@ export default function App() {
 
       {error && (
         <div className="px-3 sm:px-4 py-2 bg-red-950/50 border-b border-red-900/50 flex items-center justify-between">
-          <p className="text-sm text-red-400 flex-1 min-w-0 truncate">{error}</p>
+          <p className="text-sm text-red-400 flex-1 min-w-0 break-words">{error}</p>
           <button
             onClick={() => setError(null)}
             className="text-xs text-red-500 hover:text-red-400 ml-2 shrink-0 p-1"
@@ -155,14 +155,23 @@ export default function App() {
         />
 
         <div className="flex-1 flex flex-col min-w-0">
-          <ChatContainer
-            messages={messages}
-            isLoading={isLoading}
-            hasSession={currentSession !== null}
-            onNewSession={handleNewChatClick}
-            activeTools={activeTools}
-            streamingContent={streamingContent}
-          />
+          {resumingId ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-10 h-10 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-sm text-zinc-500">Resuming session…</p>
+              </div>
+            </div>
+          ) : (
+            <ChatContainer
+              messages={messages}
+              isLoading={isLoading}
+              hasSession={currentSession !== null}
+              onNewSession={handleNewChatClick}
+              activeTools={activeTools}
+              streamingContent={streamingContent}
+            />
+          )}
 
           <InputBar
             onSend={handleSendMessage}
