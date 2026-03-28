@@ -13,11 +13,12 @@ import { createWorkspaceRoutes } from "./routes/workspace.routes.js";
 import healthRoutes from "./routes/health.routes.js";
 import { easyAuthMiddleware } from "./middleware/auth.middleware.js";
 
-// Application Insights — lazy init, non-blocking
+// Application Insights — optional, loaded at runtime if available
 (async () => {
   const connStr = process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
   if (!connStr) return;
   try {
+    // @ts-ignore — applicationinsights is an optional runtime dependency
     const ai = await import("applicationinsights");
     ai.setup(connStr)
       .setAutoCollectRequests(true)
@@ -27,8 +28,8 @@ import { easyAuthMiddleware } from "./middleware/auth.middleware.js";
       .setAutoCollectConsole(false)
       .start();
     console.log("[AppInsights] Telemetry enabled");
-  } catch (err) {
-    console.warn("[AppInsights] Skipped —", (err as Error).message);
+  } catch {
+    console.warn("[AppInsights] Package not available, skipping telemetry");
   }
 })();
 
