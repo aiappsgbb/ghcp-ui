@@ -25,6 +25,9 @@ export interface AppConfig {
   /** Base directory for workspace files (Azure Files mount or local temp) */
   workspaceMountPath: string;
 
+  /** Base directory for SDK session state (ephemeral storage — must support SQLite locking) */
+  sessionStatePath: string;
+
   /** Global MCP servers injected into every session */
   mcpServers: Record<string, MCPServerConfig>;
 }
@@ -84,6 +87,7 @@ export function loadConfig(): AppConfig {
       useByok,
     },
     workspaceMountPath: process.env.WORKSPACE_MOUNT_PATH ?? "",
+    sessionStatePath: process.env.SESSION_STATE_PATH ?? "",
     mcpServers: parseMcpServers(),
   };
 }

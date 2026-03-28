@@ -65,19 +65,26 @@ export class CopilotService {
     this.userMcpLoader = loader;
   }
 
-  /** Per-user directory where the CLI persists session state */
+  /** Per-user directory for SDK session state (ephemeral — supports SQLite locking) */
   private userConfigDir(userId: string): string {
-    const base = this.config.workspaceMountPath || "/tmp/ghcp-sessions";
+    const base = this.config.sessionStatePath || this.config.workspaceMountPath || "/tmp/ghcp-sessions";
     const dir = join(base, userId, ".copilot");
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     return dir;
   }
 
-  /** Path to the sidecar metadata file for a session */
+  /** Path to the sidecar metadata file (Azure Files — persists across restarts) */
   private metaPath(userId: string, sessionId: string): string {
-    const dir = join(this.userConfigDir(userId), "session-meta");
+    const base = this.config.workspaceMountPath || this.config.sessionStatePath || "/tmp/ghcp-sessions";
+    const dir = join(base, userId, ".copilot", "session-meta");
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     return join(dir, `${sessionId}.json`);
+  }
+
+  /** Scan user's session-meta on Azure Files for sidecar metadata */
+  private metaDir(userId: string): string {
+    const base = this.config.workspaceMountPath || this.config.sessionStatePath || "/tmp/ghcp-sessions";
+    return join(base, userId, ".copilot", "session-meta");
   }
 
   private writeMeta(userId: string, sessionId: string, meta: SessionMeta): void {
@@ -113,7 +120,8 @@ export class CopilotService {
       await this.client.start();
       this._ready = true;
       console.log("[CopilotService] Client started successfully");
-      console.log(`[CopilotService] basePath: ${this.config.workspaceMountPath || "/tmp/ghcp-sessions"}`);
+      console.log(`[CopilotService] metadata: ${this.config.workspaceMountPath || "/tmp/ghcp-sessions"}`);
+      console.log(`[CopilotService] sessions: ${this.config.sessionStatePath || this.config.workspaceMountPath || "/tmp/ghcp-sessions"}`);
     } catch (err) {
       console.warn("[CopilotService] Failed to start Copilot CLI — chat unavailable");
       console.warn("[CopilotService]", (err as Error).message ?? err);
@@ -288,11 +296,11 @@ export class CopilotService {
 
   /** Scan user's session-meta directory for sidecar metadata files */
   private listDiskMeta(userId: string): Map<string, SessionMeta> {
-    const metaDir = join(this.userConfigDir(userId), "session-meta");
+    const dir = this.metaDir(userId);
     const result = new Map<string, SessionMeta>();
     try {
-      if (!existsSync(metaDir)) return result;
-      for (const f of readdirSync(metaDir)) {
+      if (!existsSync(dir)) return result;
+      for (const f of readdirSync(dir)) {
         if (!f.endsWith(".json")) continue;
         const sessionId = f.replace(".json", "");
         const meta = this.readMeta(userId, sessionId);

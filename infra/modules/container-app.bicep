@@ -90,6 +90,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_RG', value: openAiResourceGroup }
             { name: 'AZURE_SUBSCRIPTION_ID', value: subscriptionId }
             { name: 'WORKSPACE_MOUNT_PATH', value: '/data/workspaces' }
+            { name: 'SESSION_STATE_PATH', value: '/data/sessions' }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
             {
               name: 'AZURE_FOUNDRY_API_KEY'
@@ -104,6 +105,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               volumeName: 'workspace-volume'
               mountPath: '/data/workspaces'
+            }
+            {
+              volumeName: 'session-state'
+              mountPath: '/data/sessions'
             }
           ]
           probes: [
@@ -132,6 +137,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'workspace-volume'
           storageName: 'workspacestorage'
           storageType: 'AzureFile'
+        }
+        {
+          name: 'session-state'
+          storageType: 'EmptyDir'
         }
       ]
       scale: {
