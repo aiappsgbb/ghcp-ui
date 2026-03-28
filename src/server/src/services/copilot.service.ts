@@ -300,12 +300,34 @@ export class CopilotService {
         active: true,
       };
     } catch (err) {
-      // After container restart the SDK's internal registry is empty.
-      // Fall back to creating a new session with the same configDir —
-      // the SDK picks up existing session state from disk.
+      // After container restart the SDK's ephemeral session state is gone.
+      // Fall back to creating a fresh session and inject persisted conversation
+      // history so the model retains context from prior turns.
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("Session not found") || msg.includes("not found")) {
-        console.warn(`[CopilotService] Resume failed for ${sessionId}, re-creating with same configDir`);
+        console.warn(`[CopilotService] Resume failed for ${sessionId}, re-creating with conversation context`);
+
+        // Build conversation context from our persisted messages on Azure Files
+        const priorMessages = this.readPersistedMessages(userId, sessionId);
+        let systemMessage: { mode?: "append"; content?: string } | undefined;
+        if (priorMessages.length > 0) {
+          const transcript = priorMessages
+            .map((m) => `[${m.role.toUpperCase()}]: ${m.content}`)
+            .join("\n\n");
+          systemMessage = {
+            mode: "append",
+            content: [
+              "<prior_conversation>",
+              "This is a resumed session. Below is the conversation history from the prior session.",
+              "Continue naturally from where you left off. Do NOT repeat or summarize this history",
+              "unless asked.\n",
+              transcript,
+              "</prior_conversation>",
+            ].join("\n"),
+          };
+          console.log(`[CopilotService] Injecting ${priorMessages.length} prior messages as context`);
+        }
+
         const session = await this.client.createSession({
           sessionId,
           model,
@@ -313,6 +335,7 @@ export class CopilotService {
           onPermissionRequest: approveAll,
           mcpServers: this.buildMcpServers(userId),
           provider: this.providerConfig,
+          systemMessage,
         });
 
         const createdAt = meta?.createdAt ? new Date(meta.createdAt) : new Date();
@@ -323,7 +346,7 @@ export class CopilotService {
           createdAt: createdAt.toISOString(),
           model,
           title: meta?.title,
-          messageCount: 0,
+          messageCount: priorMessages.length,
           active: true,
         };
       }
