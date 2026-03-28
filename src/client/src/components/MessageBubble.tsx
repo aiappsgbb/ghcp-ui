@@ -1,6 +1,7 @@
 import { User, Bot, Copy, Check } from "lucide-react";
 import { useState, useCallback, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChatMessage } from "../types";
 
 function CopyButton({ text, className = "" }: { text: string; className?: string }) {
@@ -98,7 +99,20 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             <p className="whitespace-pre-wrap">{message.content}</p>
           ) : (
             <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
               components={{
+                a({ href, children }) {
+                  return (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-brand-400 hover:text-brand-300 underline underline-offset-2"
+                    >
+                      {children}
+                    </a>
+                  );
+                },
                 code({ className, children, ...props }) {
                   const isBlock = className?.startsWith("language-");
                   if (isBlock) {

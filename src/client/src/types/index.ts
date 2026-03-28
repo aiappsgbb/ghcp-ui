@@ -15,6 +15,7 @@ export interface ToolEvent {
   message?: string;
   success?: boolean;
   content?: string;
+  error?: string;
   agentName?: string;
   timestamp: string;
 }

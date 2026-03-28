@@ -44,6 +44,7 @@ export default function App() {
     fetchSessions,
     deleteSession: removeSession,
     resumeSession,
+    renameSession,
   } = useSessions();
 
   const handleNewSession = useCallback(async (model?: string) => {
@@ -104,6 +105,20 @@ export default function App() {
     await handleNewSession(model);
   }, [handleNewSession]);
 
+  // Wrap sendMessage to auto-label session from first user message
+  const handleSendMessage = useCallback(async (prompt: string) => {
+    const isFirstMessage = messages.length === 0;
+    await sendMessage(prompt);
+    if (isFirstMessage && currentSession?.id) {
+      // Generate a short label from the prompt (first 50 chars)
+      const label = prompt.length > 50
+        ? prompt.slice(0, 50).trimEnd() + "…"
+        : prompt;
+      renameSession(currentSession.id, label);
+      fetchSessions();
+    }
+  }, [sendMessage, messages.length, currentSession, renameSession, fetchSessions]);
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <Header
@@ -150,7 +165,7 @@ export default function App() {
           />
 
           <InputBar
-            onSend={sendMessage}
+            onSend={handleSendMessage}
             onStop={stopGeneration}
             isLoading={isLoading}
             disabled={currentSession === null}

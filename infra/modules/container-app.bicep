@@ -13,6 +13,7 @@ param openAiResourceGroup string
 param subscriptionId string
 param keyVaultName string
 param storageAccountName string
+param appInsightsConnectionString string = ''
 
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' existing = {
   name: containerRegistryName
@@ -89,6 +90,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_OPENAI_RG', value: openAiResourceGroup }
             { name: 'AZURE_SUBSCRIPTION_ID', value: subscriptionId }
             { name: 'WORKSPACE_MOUNT_PATH', value: '/data/workspaces' }
+            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
             {
               name: 'AZURE_FOUNDRY_API_KEY'
               secretRef: 'azure-foundry-api-key'

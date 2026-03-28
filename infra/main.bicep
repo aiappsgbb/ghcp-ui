@@ -63,6 +63,18 @@ module logAnalytics './modules/log-analytics.bicep' = {
   }
 }
 
+// Application Insights
+module appInsights './modules/application-insights.bicep' = {
+  name: 'application-insights'
+  scope: rg
+  params: {
+    name: 'appi-${resourceToken}'
+    location: location
+    tags: tags
+    logAnalyticsWorkspaceId: logAnalytics.outputs.id
+  }
+}
+
 // Container Registry
 module containerRegistry './modules/container-registry.bicep' = {
   name: 'container-registry'
@@ -168,6 +180,7 @@ module containerApp './modules/container-app.bicep' = {
     subscriptionId: subscription().subscriptionId
     keyVaultName: keyVault.outputs.name
     storageAccountName: storageAccount.outputs.name
+    appInsightsConnectionString: appInsights.outputs.connectionString
   }
 }
 

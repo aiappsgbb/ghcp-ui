@@ -88,7 +88,8 @@ function ExecutionRow({ exec }: { exec: ToolExecution }) {
     .map((e) => e.message!);
 
   const result = exec.events.find((e) => e.type === "complete" || e.type === "subagent_end");
-  const hasDetails = progressMessages.length > 0 || result?.content;
+  const errorMsg = result?.error;
+  const hasDetails = progressMessages.length > 0 || result?.content || errorMsg;
 
   return (
     <div className="group">
@@ -124,6 +125,11 @@ function ExecutionRow({ exec }: { exec: ToolExecution }) {
             <pre className="bg-gray-800/50 rounded p-2 text-gray-400 overflow-x-auto max-h-32 text-[11px]">
               {result.content}
             </pre>
+          )}
+          {errorMsg && (
+            <div className="text-red-400 bg-red-950/30 rounded p-2 text-[11px]">
+              ⚠ {errorMsg}
+            </div>
           )}
         </div>
       )}

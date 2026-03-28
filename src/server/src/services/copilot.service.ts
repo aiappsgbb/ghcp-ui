@@ -469,6 +469,7 @@ export class CopilotService {
         });
       } else if (t === "tool.execution_complete") {
         const result = d.result as Record<string, unknown> | undefined;
+        const errorMsg = d.error as string | undefined;
         push({
           type: "tool_complete",
           data: JSON.stringify({
@@ -477,6 +478,7 @@ export class CopilotService {
             content: typeof result?.content === "string"
               ? result.content.slice(0, 500)
               : undefined,
+            error: errorMsg || (d.success === false ? "Tool execution failed" : undefined),
           }),
         });
       } else if (t === "assistant.intent") {

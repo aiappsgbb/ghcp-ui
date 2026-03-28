@@ -113,6 +113,7 @@ export function useChat() {
       const toolEvents: ToolEvent[] = [];
       let reasoning = "";
       let accumulatedContent = "";
+      let receivedAssistantMessage = false;
 
       try {
         const res = await fetch(`${API_BASE}/chat/${currentSession.id}`, {
@@ -198,6 +199,7 @@ export function useChat() {
                     toolCallId: data.toolCallId,
                     success: data.success,
                     content: data.content,
+                    error: data.error,
                     timestamp: new Date().toISOString(),
                   };
                   toolEvents.push(evt);
@@ -255,6 +257,7 @@ export function useChat() {
                 }
 
                 case "assistant_message": {
+                  receivedAssistantMessage = true;
                   const assistantMsg: ChatMessage = {
                     ...data,
                     // Fallback: use accumulated deltas if server content is empty
@@ -286,6 +289,19 @@ export function useChat() {
         setError(msg);
       } finally {
         setIsLoading(false);
+        // If we accumulated content but never received assistant_message,
+        // save it as the assistant response to avoid losing content
+        if (accumulatedContent && !receivedAssistantMessage) {
+          const fallbackMsg: ChatMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: accumulatedContent,
+            timestamp: new Date().toISOString(),
+            toolEvents: toolEvents.length > 0 ? [...toolEvents] : undefined,
+            reasoning: reasoning || undefined,
+          };
+          setMessages((prev) => [...prev, fallbackMsg]);
+        }
         setStreamingContent("");
         abortRef.current = null;
       }

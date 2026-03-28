@@ -12,6 +12,20 @@ import { createWorkspaceRoutes } from "./routes/workspace.routes.js";
 import healthRoutes from "./routes/health.routes.js";
 import { easyAuthMiddleware } from "./middleware/auth.middleware.js";
 
+// Application Insights — must be initialized before other imports
+const aiConnStr = process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
+if (aiConnStr) {
+  const appInsights = await import("applicationinsights");
+  appInsights.setup(aiConnStr)
+    .setAutoCollectRequests(true)
+    .setAutoCollectPerformance(true, true)
+    .setAutoCollectExceptions(true)
+    .setAutoCollectDependencies(true)
+    .setAutoCollectConsole(true, true)
+    .start();
+  console.log("[AppInsights] Telemetry enabled");
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
